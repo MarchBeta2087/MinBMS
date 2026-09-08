@@ -60,7 +60,7 @@ BMS 的展开规则如下：
 
 ```haskell
 data GBashicuOrdinal bms where
-	BO :: GBashicuMatrix [GColumn [Integer]] -> Integer -> GBashicuOrdinal [GColumn [Integer]]
+    BO :: GBashicuMatrix [GColumn [Integer]] -> Integer -> GBashicuOrdinal [GColumn [Integer]]
 ```
 
 推荐使用 `mkOrdinal` 构造序数。它会检查 BMS 条件、末列非全零以及复制次数非负。
