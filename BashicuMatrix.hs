@@ -235,23 +235,31 @@ expandBMS matrix copies
   | otherwise = do
       rootPosition <- badRootPosition matrix
       difference <- differenceVector matrix
-      rootColumn <- pure (fst rootPosition)
-      let columns = matrixColumns matrix
+      let rootColumn = fst rootPosition
+          columns = matrixColumns matrix
           goodColumns = take rootColumn columns
           badColumns = take (length columns - rootColumn - 1) (drop rootColumn columns)
-          expandedBad = concatMap (shiftedCopies rootPosition difference copies) (zip [rootColumn ..] badColumns)
+          -- 第 k 个副本（k = 0,1,...,copies-1）是坏部加上 k 倍阶差向量；
+          -- 特别地，第 0 个副本就是不加阶差的原始坏部
+          expandedBad =
+            concatMap
+              (\k -> map (shiftedCopy rootColumn difference k) (zip [rootColumn ..] badColumns))
+              [0 .. copies - 1]
       pure (BMS (map C (goodColumns ++ expandedBad)))
   where
-    shiftedCopies rootPosition difference count (columnIndex, values) =
-      [ [if shouldShift rootPosition (columnIndex, rowIndex)
-           then value + count * valueAtOrZero difference rowIndex
+    shiftedCopy rootColumn difference k (columnIndex, values) =
+      [ if shouldShift rootColumn (columnIndex, rowIndex)
+           then value + k * valueAtOrZero difference rowIndex
            else value
         | (rowIndex, value) <- zip [0 ..] values
         ]
-      | _ <- [1 .. count]
-      ]
 
-    shouldShift rootPosition position = isAncestorOf matrix rootPosition position
+    -- 坏部中位于 (columnIndex, rowIndex) 的项在复制时加上阶差，当且仅当
+    -- 它的（同行）祖先链包含坏根所在的列，即 (rootColumn, rowIndex)。
+    -- 父项链只在同一行内传递，因此必须按项所在的行取坏根列上的对应项来判定，
+    -- 而不能直接用坏根位置本身（否则只有坏根所在的那一行的项才会被加上阶差）。
+    shouldShift rootColumn (columnIndex, rowIndex) =
+      isAncestorOf matrix (rootColumn, rowIndex) (columnIndex, rowIndex)
 
     valueAtOrZero values index =
       case safeIndex values index of
