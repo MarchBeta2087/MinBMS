@@ -1,5 +1,9 @@
 # Bashicu Matrix System（BMS）最小化实现
 
+项目地址：
+
+[https://github.com/MarchBeta2087/MinBMS](https://github.com/MarchBeta2087/MinBMS)
+
 这是 BMS 的 Haskell 最小化实现，旨在提供 BMS 的基础功能。
 
 本项目使用 BSD-3-Clause 许可证。
