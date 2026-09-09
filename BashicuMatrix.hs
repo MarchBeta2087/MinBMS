@@ -11,11 +11,14 @@ data GColumn xs where
 data GBashicuMatrix bms where
     BMS :: [GColumn [Integer]] -> GBashicuMatrix [GColumn [Integer]]
 
+-- BO matrix copies offset 表示序数 (matrix 的基本列的第 copies 项) + offset。
+-- 不变式：matrix 是末列非全零的标准 BMS（极限矩阵）或空矩阵，copies、offset 均非负。
 data GBashicuOrdinal bms where
-    BO :: GBashicuMatrix [GColumn [Integer]] -> Integer -> GBashicuOrdinal [GColumn [Integer]]
+    BO :: GBashicuMatrix [GColumn [Integer]] -> Integer -> Integer -> GBashicuOrdinal [GColumn [Integer]]
 
 instance Show (GBashicuOrdinal [GColumn [Integer]]) where
-  show (BO matrix copies) = "BO {matrix = " ++ show matrix ++ ", copies = " ++ show copies ++ "}"
+  show (BO matrix copies offset) =
+    "BO {matrix = " ++ show matrix ++ ", copies = " ++ show copies ++ ", offset = " ++ show offset ++ "}"
 
 instance Show (GColumn [Integer]) where
   show (C values) = show values
@@ -202,41 +205,80 @@ isBasicBMS matrix =
     && isAllColumnsMonoDescNonStrictly matrix
       && isAllNonZeroNotBiggerThanFatherPlusOne matrix
 
+-- 判断末列是否非全零（即是否为极限序数矩阵）。仅作为辅助判定，
+-- mkOrdinal / expandBMS 不再要求此条件。
 hasNonZeroLastColumn :: GBashicuMatrix bms -> Bool
 hasNonZeroLastColumn matrix =
   case reverse (matrixColumns matrix) of
     [] -> False
     lastColumn : _ -> any (/= 0) lastColumn
 
+-- 将标准 BMS 规范化分解为 (极限部分, 后继偏移)：
+-- 删去末尾所有全零列，极限部分的末列非全零（或为空矩阵），
+-- 删去的全零列个数即为后继偏移（每个全零列对应序数 +1）。
+-- 例如 (0,0)(1,1)(0,0)(0,0) 规范化为 ((0,0)(1,1), 2)。
+normalizeBMS :: GBashicuMatrix bms -> (GBashicuMatrix [GColumn [Integer]], Integer)
+normalizeBMS matrix =
+  let columns = matrixColumns matrix
+      (zeroSuffix, restReversed) = span isAllZeroInThisColumn (reverse columns)
+  in (BMS (map C (reverse restReversed)), toInteger (length zeroSuffix))
+
+-- 构造非常规序数。任意标准 BMS 均可；矩阵会先被规范化为
+-- 「末列非全零的极限部分 + 后继偏移」，即 BO limitPart copies offset
+-- 表示序数 (limitPart 的基本列的第 copies 项) + offset。
 mkOrdinal :: GBashicuMatrix [GColumn [Integer]] -> Integer -> Maybe (GBashicuOrdinal [GColumn [Integer]])
 mkOrdinal matrix copies
   | copies < 0 = Nothing
   | not (isBasicBMS matrix) = Nothing
-  | not (hasNonZeroLastColumn matrix) = Nothing
-  | otherwise = Just (BO matrix copies)
+  | otherwise =
+      let (limitPart, offset) = normalizeBMS matrix
+      in Just (BO limitPart copies offset)
 
 ordinalCopies :: GBashicuOrdinal bms -> Integer
-ordinalCopies (BO _ copies) = copies
+ordinalCopies (BO _ copies _) = copies
 
 ordinalMatrix :: GBashicuOrdinal bms -> GBashicuMatrix [GColumn [Integer]]
-ordinalMatrix (BO matrix _) = matrix
+ordinalMatrix (BO matrix _ _) = matrix
+
+ordinalOffset :: GBashicuOrdinal bms -> Integer
+ordinalOffset (BO _ _ offset) = offset
+
+-- 在矩阵末尾添加 n 个全零列（每添加一个全零列相当于序数 +1）。
+-- 列的高度与原矩阵一致；空矩阵时使用高度 1（即列 (0)）。
+appendZeroColumns :: Integer -> GBashicuMatrix [GColumn [Integer]] -> GBashicuMatrix [GColumn [Integer]]
+appendZeroColumns n matrix
+  | n <= 0 = matrix
+  | otherwise = BMS (map C (columns ++ replicate (fromInteger n) zeroColumn))
+  where
+    columns = matrixColumns matrix
+    height = maximum (1 : map length columns)
+    zeroColumn = replicate height 0
 
 expandedBMS :: GBashicuOrdinal bms -> Maybe (GBashicuMatrix [GColumn [Integer]])
-expandedBMS (BO matrix copies) = expandBMS matrix copies
+expandedBMS (BO matrix copies offset) = do
+  expanded <- expandBMS matrix copies
+  pure (appendZeroColumns offset expanded)
 
 ordinalSequence :: GBashicuMatrix [GColumn [Integer]] -> Maybe [GBashicuOrdinal [GColumn [Integer]]]
 ordinalSequence matrix
-  | not (isBasicBMS matrix) || not (hasNonZeroLastColumn matrix) = Nothing
-  | otherwise = Just (map (BO matrix) [0 ..])
+  | not (isBasicBMS matrix) = Nothing
+  | otherwise =
+      let (limitPart, offset) = normalizeBMS matrix
+      in Just (map (\copies -> BO limitPart copies offset) [0 ..])
 
 expandBMS :: GBashicuMatrix bms -> Integer -> Maybe (GBashicuMatrix [GColumn [Integer]])
 expandBMS matrix copies
   | copies < 0 = Nothing
+  -- 规则 1：空矩阵所对应的序数为 0
+  | null columns = Just (BMS [])
+  -- 规则 2：末列全零（后继序数），展开为删去末列后余下的部分，
+  -- 与复制次数无关（后继序数的基本列是常值列）
+  | isAllZeroInThisColumn (last columns) = Just (BMS (map C (init columns)))
+  -- 规则 3：末列非全零，保留好部并复制坏部
   | otherwise = do
       rootPosition <- badRootPosition matrix
       difference <- differenceVector matrix
       let rootColumn = fst rootPosition
-          columns = matrixColumns matrix
           goodColumns = take rootColumn columns
           badColumns = take (length columns - rootColumn - 1) (drop rootColumn columns)
           -- 第 k 个副本（k = 0,1,...,copies-1）是坏部加上 k 倍阶差向量；
@@ -247,6 +289,8 @@ expandBMS matrix copies
               [0 .. copies - 1]
       pure (BMS (map C (goodColumns ++ expandedBad)))
   where
+    columns = matrixColumns matrix
+
     shiftedCopy rootColumn difference k (columnIndex, values) =
       [ if shouldShift rootColumn (columnIndex, rowIndex)
            then value + k * valueAtOrZero difference rowIndex
