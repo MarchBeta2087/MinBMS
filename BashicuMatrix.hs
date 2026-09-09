@@ -32,8 +32,14 @@ renderBMS matrix =
 
 -- 初始化 Bashicu 矩阵
 -- [[a00,a01,a02,...,a0n],[a10,a11,a12,...,a1n],[a20,a21,a22,...,a2n],...,[am0,am1,am2,...,amn]] -> `GBashicuMatrix [GColumn [a00,a10,a20,...,am0],GColumn [a01,a11,a21,...,am1],GColumn [a02,a12,a22,...,am2],GColumn [a0n,a1n,a2n,...,amn]]`
+-- 输入允许非等长（相当于省略了各列末尾的 0），构造时统一按最大高度在右侧补零，
+-- 例如 initBMS [[0,1],[0,1],[0]] = (0,0,0)(1,1,0)。
 initBMS :: [[Integer]] -> GBashicuMatrix [GColumn [Integer]]
-initBMS mat = BMS (map C (transpose mat))
+initBMS mat = BMS (map C padded)
+  where
+    columns = transpose mat
+    height = maximum (0 : map length columns)
+    padded = map (\column -> column ++ replicate (height - length column) 0) columns
 
 -- 安全访问（返回 Maybe）
 safeIndex :: [a] -> Int -> Maybe a
