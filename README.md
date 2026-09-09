@@ -56,16 +56,20 @@ BMS 的展开规则如下：
 
 ## 非常规序数与无限序列
 
-本项目用 `GBashicuOrdinal` 表示非常规序数。它由一个末列非全零的标准 BMS 和一个非负整数复制次数组成：
+本项目用 `GBashicuOrdinal` 表示非常规序数，即「BMS + x」的形式：一个末列非全零的标准 BMS（极限部分）、一个非负整数复制次数，以及一个非负整数后继偏移：
 
 ```haskell
 data GBashicuOrdinal bms where
-    BO :: GBashicuMatrix [GColumn [Integer]] -> Integer -> GBashicuOrdinal [GColumn [Integer]]
+    BO :: GBashicuMatrix [GColumn [Integer]] -> Integer -> Integer -> GBashicuOrdinal [GColumn [Integer]]
 ```
 
-推荐使用 `mkOrdinal` 构造序数。它会检查 BMS 条件、末列非全零以及复制次数非负。
+`BO matrix copies offset` 表示序数「`matrix` 的基本列的第 `copies` 项 + `offset`」。任意标准 BMS 都可以唯一地分解为极限部分加上若干个全零末列（每个全零末列对应序数 +1），`normalizeBMS` 执行这一分解，例如 `(0,0)(1,1)(0,0)(0,0)` 规范化为 `((0,0)(1,1), 2)`，即 ω^ω + 2。
 
-`ordinalSequence matrix` 返回惰性的无限列表，其各项的复制次数依次为 `0、1、2、...`。使用 `expandedBMS` 可以将其中一项展开为有限 BMS：保留好部，复制指定次数的坏部，并按阶差向量调整受坏根祖先关系影响的元素。有限展开项不包含作为极限标记的原末列，因此复制 0 次可能得到空矩阵或仅包含好部的矩阵。
+推荐使用 `mkOrdinal` 构造序数。它会检查 BMS 条件以及复制次数非负，并自动对矩阵做上述规范化分解。
+
+`ordinalSequence matrix` 返回惰性的无限列表，其各项的复制次数依次为 `0、1、2、...`（后继偏移保持不变）。使用 `expandedBMS` 可以将其中一项展开为有限 BMS：保留好部，复制指定次数的坏部，并按阶差向量调整受坏根祖先关系影响的元素，最后在末尾加回 `offset` 个全零列。有限展开项不包含作为极限标记的原末列，因此复制 0 次可能得到空矩阵或仅包含好部的矩阵。
+
+`expandBMS` 则直接实现定义中的三条展开规则：空矩阵展开为空矩阵；末列全零时删去一个末列（与复制次数无关）；末列非全零时复制坏部并加阶差。
 
 参考资料：
 
