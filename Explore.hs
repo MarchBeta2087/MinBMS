@@ -122,6 +122,20 @@ aligns t os = any okShift [-3 .. 3]
       in length pairs >= min 3 (length os)
            && all (\(a, b) -> a == b) pairs
 
+-- | 放宽版：只要求至少 2 对匹配。**仅用于「可解析前缀」那条路**
+-- （solveFSLenient）。因为前缀往往只有 3 项、且首项通常是退化项，
+-- 严格版（≥3 对）在整体错位时放行不了。
+alignsLenient :: CNF -> [CNF] -> Bool
+alignsLenient t os = any okShift [-3 .. 3]
+  where
+    okShift d =
+      let pairs = [ (o, oFS t (toInteger n + d))
+                  | (n, o) <- zip [0 ..] os
+                  , toInteger n + d >= 0
+                  ]
+      in length pairs >= min 2 (length os)
+           && all (\(a, b) -> a == b) pairs
+
 -- | 生成候选序数（分别尝试忽略前 0..maxDrop 项）。带燃料与记忆化。
 candidates :: Int -> Int -> [CNF] -> Ctx -> (Ctx, [CNF])
 candidates depth maxDrop os ctx0 = go (dropUpTo maxDrop os) ctx0 []
@@ -152,21 +166,45 @@ solveFS depth os ctx
   | null os = (ctx, Nothing)
   | Just cached <- Map.lookup os (cOrdMemo ctx) = (ctx, cached)
   | otherwise =
+      -- 先试 oSupSeq 的结构化结论（几乎零成本）。命中就**完全跳过**后面指数级的
+      -- candidates 搜索 —— 后者会烧掉大量燃料，正是深层用例 FUEL-OUT 的主因。
+      -- 注意：这里同样必须通过 aligns 交叉验证，绝不直接采信。
+      let supCands = [ t | t <- maybe [] (: []) (oSupSeq os), aligns t os ]
+      in case supCands of
+           (t : _) -> (rememberOrd os (Just t) ctx, Just t)
+           [] ->
+             let (ctx1, ok) = burn ctx
+             in if not ok
+                  then (ctx, Nothing)
+                  else
+                    let (ctx2, cands) = candidates depth maxDrop os ctx1
+                    in case [ t | t <- cands, aligns t os ] of
+                         [] -> (rememberOrd os Nothing ctx2, Nothing)
+                         hits ->
+                           let t = minimumBy (\a b -> oCmp a b) hits
+                           in (rememberOrd os (Just t) ctx2, Just t)
+  where
+    maxDrop = 2
+
+-- | 「可解析前缀」版：当完整基本列里有项定不出来时（见 ordOf 里的说明），
+-- 退而用**已知前缀** + oSupSeq 反推极限。
+--
+-- 取舍（与维护者确认过）：验证只覆盖**已知项**（alignsLenient，≥2 对），
+-- 因此这条路比严格路径弱。为压低误判风险，这里只采信 oSupSeq 的结构化结论，
+-- 不再叠加松散的 candidates。结果照常写入记忆表，供上层使用。
+solveFSLenient :: [CNF] -> Ctx -> (Ctx, Maybe CNF)
+solveFSLenient os ctx
+  | null os = (ctx, Nothing)
+  | Just cached <- Map.lookup os (cOrdMemo ctx) = (ctx, cached)
+  | otherwise =
       let (ctx1, ok) = burn ctx
       in if not ok
            then (ctx, Nothing)
-           else
-             let (ctx2, cands) = candidates depth maxDrop os ctx1
-                 -- oSupSeq 直接由基本列形态反推极限，通常是最强候选；
-                 -- 仍然必须通过 aligns 交叉验证，绝不直接采信。
-                 extra = maybe [] (: []) (oSupSeq os)
-             in case [ t | t <- (extra ++ cands), aligns t os ] of
-                  [] -> (rememberOrd os Nothing ctx2, Nothing)
+           else case [ t | t <- maybe [] (: []) (oSupSeq os), alignsLenient t os ] of
+                  [] -> (rememberOrd os Nothing ctx1, Nothing)
                   hits ->
                     let t = minimumBy (\a b -> oCmp a b) hits
-                    in (rememberOrd os (Just t) ctx2, Just t)
-  where
-    maxDrop = 2
+                    in (rememberOrd os (Just t) ctx1, Just t)
 
 rememberOrd :: [CNF] -> Maybe CNF -> Ctx -> Ctx
 rememberOrd os v ctx = ctx { cOrdMemo = Map.insert os v (cOrdMemo ctx) }
@@ -226,20 +264,26 @@ ordOf k depth cols ctx
           in case sequence fsList of
                Nothing -> (c, Nothing)
                Just fss ->
-                 let (c1, ords) = collectOrds fss c
-                 in case sequence ords of
-                      Nothing -> (c1, Nothing)
-                      Just os ->
-                        -- 极限矩阵的基本列必须严格递增，否则视为不可验证。
-                        if strictlyIncreasing os
-                          then solveFS 5 os c1
-                          else (c1, Nothing)
+                 -- 逐项定序，遇到第一个「定不出来」的项立即停止：既不浪费燃料去展开
+                 -- 更后面（列数会爆炸）的项，又正好得到「可解析前缀」。
+                 let (c1, known, allOk) = collectKnown fss c
+                 in if allOk && strictlyIncreasing known
+                      -- 完整基本列都能定序且严格递增：走严格验证（铁律不变）。
+                      then solveFS 5 known c1
+                      else if length known >= 3 && strictlyIncreasing known
+                             then solveFSLenient known c1
+                             else (c1, Nothing)
 
-    collectOrds [] c = (c, [])
-    collectOrds (x : xs) c =
-      let (c1, y) = ordOf k (depth - 1) x c
-          (c2, ys) = collectOrds xs c1
-      in (c2, y : ys)
+    -- 逐项定序，遇到第一个 Nothing 就停。返回 (新 ctx, 已知项, 是否全项都成功)。
+    collectKnown :: [Key] -> Ctx -> (Ctx, [CNF], Bool)
+    collectKnown [] cx = (cx, [], True)
+    collectKnown (x : xs) cx =
+      let (cx1, y) = ordOf k (depth - 1) x cx
+      in case y of
+           Nothing -> (cx1, [], False)
+           Just o ->
+             let (cx2, rest, ok) = collectKnown xs cx1
+             in (cx2, o : rest, ok)
 
 rememberMat :: Key -> Maybe CNF -> Ctx -> Ctx
 rememberMat cols v ctx = ctx { cMatrixMemo = Map.insert cols v (cMatrixMemo ctx) }
