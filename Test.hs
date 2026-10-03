@@ -38,24 +38,27 @@ data Check = Check String Bool
 -- 黄金用例（期望值由定义推导，并用 expandBMS 实测确认）
 ------------------------------------------------------------------------
 
--- ω^ω 的两种写法
-omegaOmega :: BMatrix
-omegaOmega = fromCols [[0, 0], [1, 1]]        -- 2 行：(0,0)(1,1)
+-- ε₀ = (0,0)(1,1)（2 行）
+epsilonZero :: BMatrix
+epsilonZero = fromCols [[0, 0], [1, 1]]       -- 2 行：(0,0)(1,1)
 
+-- ω^ω 有不止一种写法：2 行 (0,0)(1,0)(2,0) 与 1 行 (0)(1)(2)。
+-- 不同矩阵对应同一序数是正常的：序数是「值」，矩阵只是「表示」。
 oneRowOmegaOmega :: BMatrix
 oneRowOmegaOmega = fromCols [[0], [1], [2]]   -- 1 行：(0)(1)(2)
 
 -- 注意本仓库的「复制 n 次」约定（2 行从 0 起、1 行从 ω^0 起，差一格）：
---   (0,0)(1,1)[n] = (0,0)(1,0)...(n-1,0)   即 ω^(n-1)
---   (0)(1)(2)[n]  = (0)(1)^n               即 ω^n
+--   (0,0)(1,1)[0] = ∅，(0,0)(1,1)[1] = (0,0)，
+--   (0,0)(1,1)[n] = (0,0)(1,0)(2,0)...(n-1,0)（n ≥ 2），即 (n-1) 层 ω 塔
+--   (0)(1)(2)[n]  = (0)(1)^n                     即 ω^n
 goldenChecks :: [Check]
 goldenChecks =
-  [ Check "(0,0)(1,1)[0] = 空矩阵" (expanded omegaOmega 0 == Just [])
-  , Check "(0,0)(1,1)[1] = (0,0)"  (expanded omegaOmega 1 == Just [[0, 0]])
+  [ Check "(0,0)(1,1)[0] = 空矩阵" (expanded epsilonZero 0 == Just [])
+  , Check "(0,0)(1,1)[1] = (0,0)"  (expanded epsilonZero 1 == Just [[0, 0]])
   , Check "(0,0)(1,1)[2] = (0,0)(1,0)"
-      (expanded omegaOmega 2 == Just [[0, 0], [1, 0]])
+      (expanded epsilonZero 2 == Just [[0, 0], [1, 0]])
   , Check "(0,0)(1,1)[3] = (0,0)(1,0)(2,0)"
-      (expanded omegaOmega 3 == Just [[0, 0], [1, 0], [2, 0]])
+      (expanded epsilonZero 3 == Just [[0, 0], [1, 0], [2, 0]])
   , Check "(0)(1)(2)[0] = (0)"    (expanded oneRowOmegaOmega 0 == Just [[0]])
   , Check "(0)(1)(2)[1] = (0)(1)" (expanded oneRowOmegaOmega 1 == Just [[0], [1]])
   , Check "(0)(1)(2)[2] = (0)(1)(1)"
@@ -95,7 +98,7 @@ propertyChecks =
       (let (lp, off) = normalizeBMS (fromCols [[0, 0], [1, 1], [0, 0], [0, 0]])
        in matrixColumns lp == [[0, 0], [1, 1]] && off == 2)
   , Check "mkOrdinal 拒绝负复制次数"
-      (isNothing (mkOrdinal omegaOmega (-1)))
+      (isNothing (mkOrdinal epsilonZero (-1)))
   , Check "mkOrdinal 拒绝非标准矩阵（首列非全零）"
       (isNothing (mkOrdinal (fromCols [[1], [0]]) 0))
   , Check "expandedBMS (BO m n o) = 补 o 个全零列(expandBMS m n)"
@@ -113,6 +116,14 @@ propertyChecks =
 ------------------------------------------------------------------------
 -- 序数引擎自检（Ordinal.hs）
 ------------------------------------------------------------------------
+
+-- 自然数与 ω 的记号，供 oSupSeq 用例使用
+natCNF :: Integer -> CNF
+natCNF 0 = oZero
+natCNF k = CNF [(oZero, k)]
+
+omegaCNF :: CNF
+omegaCNF = oOmegaPow oOne
 
 ordinalChecks :: [Check]
 ordinalChecks =
@@ -134,6 +145,24 @@ ordinalChecks =
   , Check "ω + 1 + ω = ω·2"
       (oAdd (oAdd (oOmegaPow oOne) oOne) (oOmegaPow oOne)
          == CNF [(oOne, 2)])
+  , Check "oSupSeq [0,1,2,3,4] = ω"
+      (oSupSeq [natCNF k | k <- [0 .. 4]] == Just omegaCNF)
+  , Check "oSupSeq [1, ω, ω·2, ω·3, ω·4] = ω²"
+      (oSupSeq [oOne, omegaCNF, CNF [(oOne, 2)], CNF [(oOne, 3)], CNF [(oOne, 4)]]
+         == Just (oOmegaPow (CNF [(oZero, 2)])))
+  , Check "oSupSeq [ω, ω+1, ω+2, ω+3, ω+4] = ω·2"
+      (oSupSeq [oAdd omegaCNF (natCNF k) | k <- [0 .. 4]]
+         == Just (CNF [(oOne, 2)]))
+  , Check "oSupSeq [ω^ω, ω^(ω+1), ω^(ω+2), ω^(ω+3)] = ω^(ω·2)"
+      (oSupSeq [oOmegaPow (oAdd omegaCNF (natCNF (k + 1))) | k <- [0 .. 3]]
+         == Just (oOmegaPow (CNF [(oOne, 2)])))
+  , Check "oSupSeq [1, ω^ω, ω^(ω·2), ω^(ω·3)] = ω^(ω²)"
+      (oSupSeq (oOne : [oOmegaPow (CNF [(oOne, k + 2)]) | k <- [0 .. 2]])
+         == Just (oOmegaPow (oOmegaPow (CNF [(oZero, 2)]))))
+  , Check "oSupSeq [0,0,0,0,0] = Nothing（退化序列不猜）"
+      (oSupSeq (replicate 5 oZero) == Nothing)
+  , Check "oSupSeq [1,1,1] = Nothing（非严格递增不猜）"
+      (oSupSeq [oOne, oOne, oOne] == Nothing)
   ]
 
 ------------------------------------------------------------------------

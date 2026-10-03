@@ -17,6 +17,7 @@ module Ordinal
   ( CNF(..)
   , oZero, oOne, oSucc, oPred, oAdd, oOmegaPow
   , oIsZero, oIsLimit, oCmp, oFS, oShow, oSize
+  , oSupSeq
   ) where
 
 import Data.List (intercalate)
@@ -108,6 +109,73 @@ oFSLimit (CNF ts) n =
        else if oIsLimit e
               then oAdd prefix (oOmegaPow (oFS e n))
               else oAdd prefix (CNF [(oPred e, n + 1)])
+
+-- | 由一段严格递增的基本列前几项，反推它所属的极限序数（康托范式层）。
+--
+-- 只识别常见形态；识别不出就返回 Nothing。**调用方仍必须用基本列交叉验证**，
+-- 所以这里「宁缺毋滥」，绝不硬猜。
+--
+-- 用到的性质：若所有项都共享加法前缀 q，则 sup(q + rᵢ) = q + sup(rᵢ)，
+-- 因此剥掉公共前缀 q 后只需看尾部 rᵢ：
+--
+--   * 尾部都是同一个指数 e 的单体 ω^e·cᵢ（系数递增）→ 极限是 q + ω^(e+1)；
+--   * 尾部都是单体 ω^{eᵢ}（指数严格递增）→ 极限是 q + ω^(sup eᵢ)（递归）。
+--
+-- 基本列的前一两项常常是「退化项」（如 0 或 1），所以对整体同时尝试丢弃
+-- 前 0/1/2 项，取第一个能识别的结果。
+oSupSeq :: [CNF] -> Maybe CNF
+oSupSeq os = firstJust [ classify (drop k os) | k <- [0 .. min 2 (length os - 1)] ]
+
+firstJust :: [Maybe a] -> Maybe a
+firstJust xs =
+  case [ y | Just y <- xs ] of
+    [] -> Nothing
+    y : _ -> Just y
+
+classify :: [CNF] -> Maybe CNF
+classify os
+  | length os < 2 = Nothing
+  | otherwise =
+      let q = commonPrefix os
+          ts = map (stripAddPrefix q) os
+      in case traverse singleTerm ts of
+           Nothing -> Nothing
+           Just terms ->
+             let es = map fst terms
+                 cs = map snd terms
+             in if allSame es && strictlyIncrInts cs
+                  then Just (oAdd q (oOmegaPow (oSucc (head es))))
+                  else if strictlyIncr es
+                         then fmap (\e -> oAdd q (oOmegaPow e)) (oSupSeq es)
+                         else Nothing
+
+-- | 单个加法项 ω^e·c 的 (e, c)；(CNF []) 与多项之和都返回 Nothing。
+singleTerm :: CNF -> Maybe (CNF, Integer)
+singleTerm (CNF [t]) = Just t
+singleTerm _ = Nothing
+
+-- | 所有项共有的最长加法前缀（要求项完全相等：指数与系数都相同）。
+commonPrefix :: [CNF] -> CNF
+commonPrefix os = CNF (foldr1 lcp (map termsOf os))
+  where
+    lcp xs ys = map fst (takeWhile (uncurry (==)) (zip xs ys))
+
+-- | 从康托范式里剥掉一个加法前缀 q。
+stripAddPrefix :: CNF -> CNF -> CNF
+stripAddPrefix (CNF q) (CNF ts) = CNF (drop (length q) ts)
+
+termsOf :: CNF -> [(CNF, Integer)]
+termsOf (CNF ts) = ts
+
+allSame :: Eq a => [a] -> Bool
+allSame [] = True
+allSame (x : xs) = all (== x) xs
+
+strictlyIncr :: [CNF] -> Bool
+strictlyIncr xs = and (zipWith (\a b -> oCmp a b == LT) xs (drop 1 xs))
+
+strictlyIncrInts :: [Integer] -> Bool
+strictlyIncrInts xs = and (zipWith (<) xs (drop 1 xs))
 
 -- | 显示，例如 "ω^(ω) + ω·3 + 2"。
 oShow :: CNF -> String

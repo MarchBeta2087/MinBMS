@@ -157,7 +157,10 @@ solveFS depth os ctx
            then (ctx, Nothing)
            else
              let (ctx2, cands) = candidates depth maxDrop os ctx1
-             in case [ t | t <- cands, aligns t os ] of
+                 -- oSupSeq 直接由基本列形态反推极限，通常是最强候选；
+                 -- 仍然必须通过 aligns 交叉验证，绝不直接采信。
+                 extra = maybe [] (: []) (oSupSeq os)
+             in case [ t | t <- (extra ++ cands), aligns t os ] of
                   [] -> (rememberOrd os Nothing ctx2, Nothing)
                   hits ->
                     let t = minimumBy (\a b -> oCmp a b) hits
