@@ -1,0 +1,9 @@
+# 行尾符（end-of-line）规则
+#
+# 只约束「跨平台脚本」这类**行尾符敏感**的文件，不动 *.hs / *.md
+# （它们的行尾由各人的 core.autocrlf 决定，强行统一会触发无关的全文件重写）。
+#
+# 为什么 .sh 必须锁 LF：shebang 行若以 CRLF 结尾，Linux / macOS 上会报
+#   ./build.sh: /bin/sh^M: bad interpreter: No such file or directory
+*.sh  text eol=lf
+*.cmd text eol=crlf

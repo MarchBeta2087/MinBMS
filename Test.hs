@@ -5,8 +5,9 @@
 -- 全部通过时打印「全部通过 ✅」；有失败则列出名称并返回非零退出码。
 --
 -- 铁律（详见 CONTRIBUTING.md）：
---   * 期望值只能由本仓库的定义推导（并用 expandBMS 实测确认），
---     禁止照抄任何外部原文的表达（CC BY-SA 等）。
+--   * 期望值只能由本仓库的定义推导（并用 expandBMS 实测确认）；
+--   * 分清「事实」与「表达」：数学事实随便用，别人的**表达**不要大段复制，
+--     用到了就标出处（各外部来源的许可状态不同，详见 CONTRIBUTING.md 铁律二）。
 --   * 无法由定义/基本列确认的，**不要**写成测试用例，宁缺毋滥。
 module Main (main) where
 
@@ -16,8 +17,9 @@ import Ordinal
 import Data.List (transpose)
 import Data.Maybe (isNothing)
 import System.Exit (exitFailure)
+import Version       -- 多版本（BM4 / BM3.3）回归测试
 
-type BMatrix = GBashicuMatrix [GColumn [Integer]]
+-- BMatrix / Position 等类型别名统一由 BashicuMatrix 导出，此处不再重复定义。
 
 ------------------------------------------------------------------------
 -- 小工具
@@ -47,7 +49,9 @@ epsilonZero = fromCols [[0, 0], [1, 1]]       -- 2 行：(0,0)(1,1)
 oneRowOmegaOmega :: BMatrix
 oneRowOmegaOmega = fromCols [[0], [1], [2]]   -- 1 行：(0)(1)(2)
 
--- 注意本仓库的「复制 n 次」约定（2 行从 0 起、1 行从 ω^0 起，差一格）：
+-- 本仓库的「复制 n 次」约定**与行数无关**，统一是：
+--   [n] = 好部 + n 份坏部，第 k 份加 k·Δ（k = 0..n-1）。
+-- 实测确认：`(0)(1)[n]` 与 `(0,0)(1,0)[n]` 都是 n 份（不存在「差一格」）。
 --   (0,0)(1,1)[0] = ∅，(0,0)(1,1)[1] = (0,0)，
 --   (0,0)(1,1)[n] = (0,0)(1,0)(2,0)...(n-1,0)（n ≥ 2），即 (n-1) 层 ω 塔
 --   (0)(1)(2)[n]  = (0)(1)^n                     即 ω^n
@@ -114,6 +118,74 @@ propertyChecks =
   ]
 
 ------------------------------------------------------------------------
+-- 多版本（BM4 / BM3.3）
+------------------------------------------------------------------------
+
+-- | 按版本展开的结果（以列表示）。
+expandedWith :: Version -> BMatrix -> Integer -> Maybe [[Integer]]
+expandedWith v m n = fmap matrixColumns (expandWith v m n)
+
+-- (0,0,0)(1,1,1)(2,1,0)(1,1,1)：BM4 与「理想 BMS」分歧的最小著名算例。
+-- 该矩阵展开后第 2 份坏部的末列，BM4 是 (3,2,0)、BM3.3 是 (3,1,0)。
+-- 期望值由 Version.hs 里记录的规则（BM4 判定 + BM3.3 规则 2/3）推导，
+-- 并用本程序实测确认；不是照抄外部原文（见 CONTRIBUTING.md 铁律二）。
+liftingExample :: BMatrix
+liftingExample = fromCols [[0, 0, 0], [1, 1, 1], [2, 1, 0], [1, 1, 1]]
+
+versionChecks :: [Check]
+versionChecks =
+  [ Check "registry：BM4 与 BM3.3 都已登记"
+      (map versionName versions == ["BM4", "BM3.3"])
+  , Check "lookupVersion 能按名字找到版本"
+      (fmap versionName (lookupVersion "BM3.3") == Just "BM3.3")
+  , Check "lookupVersion 对未登记名字返回 Nothing"
+      (isNothing (lookupVersion "BM9"))
+  , Check "BM4 与原来的 expandBMS 行为完全一致"
+      (and [ expandedWith bm4 m n == expanded m n
+           | m <- versionSamples, n <- [0 .. 4] ])
+  , Check "BM4：算例 [3] 末份坏部为 (2,2,0)(3,2,0)(4,3,0)"
+      (expandedWith bm4 liftingExample 3
+         == Just [[0,0,0],[1,1,1],[2,1,0],[1,1,0],[2,2,1],[3,2,0],[2,2,0],[3,3,1],[4,3,0]])
+  , Check "BM3.3：算例 [3] 末份坏部为 (2,2,0)(3,1,0)(4,1,0)"
+      (expandedWith bm33 liftingExample 3
+         == Just [[0,0,0],[1,1,1],[2,1,0],[1,1,0],[2,2,1],[3,1,0],[2,2,0],[3,3,1],[4,1,0]])
+  , Check "BM3.3 复制 0/1 次时与 BM4 相同（第 0 份不加阶差，故差异要到 n≥2 才显形）"
+      (and [ expandedWith bm33 liftingExample n == expandedWith bm4 liftingExample n
+           | n <- [0, 1] ])
+  , Check "BM3.3 从复制 2 次起与本例的 BM4 不同"
+      (expandedWith bm33 liftingExample 2 /= expandedWith bm4 liftingExample 2)
+  , Check "两个版本的展开结果都仍是标准 BMS"
+      (and [ maybe False isBasicBMS (expandWith v m n)
+           | v <- versions, m <- versionSamples, n <- [0 .. 4] ])
+  , Check "BM3.3 加阶差的项不多于 BM4（它只做减法）"
+      (and [ noDeltaSubset bm33 bm4 m
+           | m <- versionSamples, hasNonZeroLastColumn m ])
+  ]
+
+-- | 样品矩阵（覆盖 1/2/3 行，含末列全零的后继情形）。
+versionSamples :: [BMatrix]
+versionSamples =
+  [ fromCols [[0], [1]]
+  , fromCols [[0], [1], [2], [1]]
+  , fromCols [[0, 0], [1, 1]]
+  , fromCols [[0, 0], [1, 1], [2, 2], [2, 1], [1, 1], [2, 2]]
+  , fromCols [[0, 0, 0], [1, 1, 1], [2, 1, 0], [1, 1, 1]]
+  , fromCols [[0, 0, 0], [1, 1, 1], [2, 2, 2], [3, 3, 3], [4, 2, 0]]
+  , fromCols [[0, 0], [1, 1], [0, 0]]       -- 末列全零（后继）
+  ]
+
+-- | 在坏部里，version a 「不加阶差」的位置是否包含 version b 的那些位置。
+--   只对末列非全零的矩阵有意义（否则走的是规则 2，没有坏部）。
+noDeltaSubset :: Version -> Version -> BMatrix -> Bool
+noDeltaSubset a b m = case badRoot m of
+  Nothing -> True
+  Just rc ->
+    let cols = matrixColumns m
+        height = maximum (0 : map length cols)
+        ps = [ (c, y) | c <- [rc .. length cols - 2], y <- [0 .. height - 1] ]
+    in and [ versionAscend b m rc p || not (versionAscend a m rc p) | p <- ps ]
+
+------------------------------------------------------------------------
 -- 序数引擎自检（Ordinal.hs）
 ------------------------------------------------------------------------
 
@@ -171,7 +243,7 @@ ordinalChecks =
 
 main :: IO ()
 main = do
-  let allChecks = goldenChecks ++ propertyChecks ++ ordinalChecks
+  let allChecks = goldenChecks ++ propertyChecks ++ versionChecks ++ ordinalChecks
       fails = [ name | Check name ok <- allChecks, not ok ]
   putStrLn ("共 " ++ show (length allChecks)
             ++ " 项检查，失败 " ++ show (length fails) ++ " 项。")

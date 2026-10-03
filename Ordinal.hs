@@ -17,7 +17,7 @@ module Ordinal
   ( CNF(..)
   , oZero, oOne, oSucc, oPred, oAdd, oOmegaPow
   , oIsZero, oIsLimit, oCmp, oFS, oShow, oSize
-  , oSupSeq
+  , oSupSeq, oSupSeqFrom
   ) where
 
 import Data.List (intercalate)
@@ -121,10 +121,26 @@ oFSLimit (CNF ts) n =
 --   * 尾部都是同一个指数 e 的单体 ω^e·cᵢ（系数递增）→ 极限是 q + ω^(e+1)；
 --   * 尾部都是单体 ω^{eᵢ}（指数严格递增）→ 极限是 q + ω^(sup eᵢ)（递归）。
 --
--- 基本列的前一两项常常是「退化项」（如 0 或 1），所以对整体同时尝试丢弃
--- 前 0/1/2 项，取第一个能识别的结果。
+-- ### 关于开头的「起点项」
+--
+-- BMS 的 `[0]` 得到的是**好部**（0 份复制），是展开的**起点**，通常不属于
+-- 该极限序数的基本列。但**并非所有矩阵都会产生这个起点项**：
+--
+--     (0)(1)    = ω    [n] 序数 = 0, 1, 2, 3, …   ← 有起点项（那个 0）
+--     (0)(0)(1) = ω    [n] 序数 = 1, 2, 3, 4, …   ← 没有起点项
+--
+-- 所以本函数在 `{0, 1}` 两个跳过量下**都试一遍**，返回第一个可识别的结果。
+-- 调用方（Explore.hs）仍必须用**严格逐项**的基本列验证（无平移）来确认，
+-- 所以这里放宽跳过量**不会**引入「猜」：最终采纳与否由严格验证决定。
+--
+-- （早先这里是「试 0/1/2 项」，既有 2 这个多余的候选，又缺少明确语义；
+-- 现在收窄到 {0,1}，对应「有无起点项」这两种情形。）
 oSupSeq :: [CNF] -> Maybe CNF
-oSupSeq os = firstJust [ classify (drop k os) | k <- [0 .. min 2 (length os - 1)] ]
+oSupSeq os = firstJust [ classify (drop k os) | k <- [0, 1] ]
+
+-- | 显式指定跳过量（`oSupSeqFrom 0` == 不跳过）。默认请用 `oSupSeq`。
+oSupSeqFrom :: Int -> [CNF] -> Maybe CNF
+oSupSeqFrom skip os = classify (drop skip os)
 
 firstJust :: [Maybe a] -> Maybe a
 firstJust xs =

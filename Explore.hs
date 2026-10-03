@@ -7,6 +7,9 @@
 --   runghc Explore.hs 1 5 3 3    -- 第 4 个参数是基本列深度 k（默认 4）
 --   runghc Explore.hs 1 6 5 4 200000   -- 第 5 个参数是每矩阵燃料（默认 2000）
 --
+-- 指定 BMS 版本（默认 BM4；名字必须是 `versions` 里登记过的，例如 BM3.3）：
+--   runghc Explore.hs --bm=BM3.3 1 5 3
+--
 -- 内部有三道闸，任一触发都直接标 unresolved（不烧燃料），从而避免卡死：
 --   1. 每矩阵燃料（步数预算，逐矩阵独立）；
 --   2. 矩阵列数上限（maxAnalyzedCols）；
@@ -19,9 +22,10 @@ module Main (main) where
 
 import BashicuMatrix
 import Ordinal
+import Version
 
 import Control.Monad (replicateM, when)
-import Data.List (foldl', intercalate, minimumBy, nubBy, transpose)
+import Data.List (foldl', intercalate, minimumBy, nubBy, partition, transpose)
 import qualified Data.Map.Strict as Map
 import System.Environment (getArgs)
 import System.IO
@@ -32,25 +36,30 @@ import System.IO
   , stdout
   )
 
-type BMatrix = GBashicuMatrix [GColumn [Integer]]
+-- BMatrix / Position 等类型别名统一由 BashicuMatrix 导出，此处不再重复定义。
+
 type Key = [[Integer]]
 
 -- | 矩阵 -> 序数 的记忆表。
 type Memo = Map.Map Key (Maybe CNF)
 
--- | 计算上下文：两张记忆表 + 燃料（步数预算）。
+-- | 计算上下文：两张记忆表 + 燃料（步数预算）+ 当前版本。
 --
 -- 燃料**逐矩阵独立**（见 main 的 step）：每分析一个新矩阵都会重置燃料，
 -- 但记忆表跨矩阵保留。燃料耗尽后一律返回 Nothing（unresolved），
 -- 从而保证**永不卡死**：宁可少给结果，也绝不挂住。
+--
+-- 一个 Ctx **绑定一个版本**：记忆表的键只有矩阵，不含版本，
+-- 所以不要在同一个 Ctx 里混用两个版本（本工具一次运行只用一个版本）。
 data Ctx = Ctx
   { cMatrixMemo :: Memo
   , cOrdMemo :: Map.Map [CNF] (Maybe CNF)
   , cFuel :: Int
+  , cVersion :: Version
   }
 
-freshCtx :: Int -> Ctx
-freshCtx fuel = Ctx Map.empty Map.empty fuel
+freshCtx :: Version -> Int -> Ctx
+freshCtx version fuel = Ctx Map.empty Map.empty fuel version
 
 -- | 消耗 1 点燃料；返回 False 表示已耗尽。
 burn :: Ctx -> (Ctx, Bool)
@@ -105,57 +114,92 @@ splitLast :: CNF -> (CNF, (CNF, Integer))
 splitLast (CNF []) = (oZero, (oZero, 1))
 splitLast (CNF ts) = (CNF (init ts), last ts)
 
--- | 「基本列对齐」判定。
+-- | 「基本列对齐」判定（**严格版**）。
 --
--- 不同系统/实现对「第 n 项」的下标约定可能差一格，例如
---   1 行  (0)(1)[n]      = (0)^n        （从 0 起）
---   2 行  (0,0)(1,0)[n]  = (0,0)^(n+1)  （从 1 起）
--- 因此这里允许整体错位：只要存在平移 d，使忽略前几项后逐项相等即算对齐。
+-- ### 本仓库的「第 n 项」约定（统一，与行数无关）
+--
+--   `[n]` = 好部 + n 份坏部（第 k 份加 k·Δ，k = 0..n-1），
+--   所以 `(0)(1)[n]` 与 `(0,0)(1,0)[n]` **都是 n 份**（实测确认，见 Test.hs）。
+--
+-- ### 为什么要「跳过起点项」，以及为什么跳过量不固定为 1
+--
+-- BMS 的 `[0]` 得到的是**好部**（0 份复制），它是展开的**起点**，
+-- 通常**不属于该极限序数的基本列**。例：
+--
+--     (0)(1)   = ω     [n] 序数 = 0, 1, 2, 3, …   ← 多一个起点项 0（省略）
+--     (0)(0)(1)= ω     [n] 序数 = 1, 2, 3, 4, …   ← 没有那个起点项
+--     (0)(1)(2)= ω^ω   [n] 序数 = 1, ω, ω², …     ← 多一个起点项 1
+--
+-- 所以「跳过量」不是恒为 1，**取决于该矩阵的 `[0]` 是否给出了额外的起点项**
+-- （判据：好部非空 / `[0]` 展开后仍留下内容）。
+--
+-- ### 为什么这不是「猜」
+--
+-- 这里只在 `skip ∈ {0, 1}` 中取那个**能通过严格逐项验证**的（无平移、逐项相等）。
+-- 注意 `t` 是**同一个**，只是拿它去对「跳 0 项」或「跳 1 项」两种起点约定；
+-- 这与早先 `any d ∈ [-3..3]` 有本质区别：
+--
+--   * 早先是**对同一个 skip 搜索平移量**，用平移把对不上的序列硬凑上 —— 那是掩盖 bug；
+--   * 现在是**在两个有明确语义的起点约定中选一个**，且选中的那个必须
+--     **逐项严格相等**（`oFS t n` 对 `known[n+skip]`）。语义清晰、可验证、无自由度。
+--
+-- 两种约定至多一种能通过（否则同一 `t` 会有两套不同的基本列，自相矛盾），
+-- 所以这不是「宁滥勿缺」，而是「确定唯一」。
+--
+-- ⚠️ 上面「至多一种」要求**序列严格递增**（极限序数的基本列必然如此）。
+-- 若拿一个**常值**序列（如 `[1,1,1,…]`，那是后继序数的基本列）来算，
+-- 两种 skip 都会通过 —— 但这不影响本程序：`solveFS` / `solveFSLenient`
+-- 只在 `strictlyIncreasing known` 成立时被调用（见 ordOf）。
 aligns :: CNF -> [CNF] -> Bool
-aligns t os = any okShift [-3 .. 3]
-  where
-    okShift d =
-      let pairs = [ (o, oFS t (toInteger n + d))
-                  | (n, o) <- zip [0 ..] os
-                  , toInteger n + d >= 0
-                  ]
-      in length pairs >= min 3 (length os)
-           && all (\(a, b) -> a == b) pairs
+aligns t os = any (\s -> alignsFromEither s 3 t os) [0, 1]
 
 -- | 放宽版：只要求至少 2 对匹配。**仅用于「可解析前缀」那条路**
--- （solveFSLenient）。因为前缀往往只有 3 项、且首项通常是退化项，
--- 严格版（≥3 对）在整体错位时放行不了。
+-- （solveFSLenient）。同样在 `{0,1}` 中取通过者。
 alignsLenient :: CNF -> [CNF] -> Bool
-alignsLenient t os = any okShift [-3 .. 3]
-  where
-    okShift d =
-      let pairs = [ (o, oFS t (toInteger n + d))
-                  | (n, o) <- zip [0 ..] os
-                  , toInteger n + d >= 0
-                  ]
-      in length pairs >= min 2 (length os)
-           && all (\(a, b) -> a == b) pairs
+alignsLenient t os = any (\s -> alignsFromEither s 2 t os) [0, 1]
 
--- | 生成候选序数（分别尝试忽略前 0..maxDrop 项）。带燃料与记忆化。
-candidates :: Int -> Int -> [CNF] -> Ctx -> (Ctx, [CNF])
-candidates depth maxDrop os ctx0 = go (dropUpTo maxDrop os) ctx0 []
+-- | `nMin` 为「至少要匹配多少对」。`skip` = 跳过的起点项个数（见上）。
+alignsFromEither :: Int -> Int -> CNF -> [CNF] -> Bool
+alignsFromEither skip nMin t os0 =
+  let os = drop skip os0
+      pairs = [ (o, oFS t (toInteger n))
+              | (n, o) <- zip [0 ..] os :: [(Integer, CNF)] ]
+  in length pairs >= min nMin (length os)
+       && all (\(a, b) -> a == b) pairs
+
+-- | 生成候选序数（**候选生成器**，不是判据）。
+--
+-- ### 它与 `aligns` 的关系：生成 vs 判定
+--
+-- 这里产出的只是**候选集**，最终采纳哪一个一律由 `aligns` 决定（见 solveFS）。
+-- 因此本函数的「起点项」约定**不必**与 `oSupSeq` / `aligns` 逐字一致 ——
+-- 它只影响候选集的**大小**，不影响最终答案（若不同约定给出的候选集都包含正确解）。
+--
+--     * 早先这里是 `dropUpTo maxDrop`（分别丢 0/1/2 项，宁滥勿缺），
+--       结果是候选集被放大、「丢几项」成了一个自由参数；
+--     * 上一版改成固定 `drop 1`，但它与 `oSupSeq` / `aligns` 的 `{0,1}` 不一致，
+--       注释却写「必须一致」，容易误导后来者（实测二者**输出完全相同**：
+--       因为候选集不同但都含正确解，且被判据 `aligns` 过滤后收敛到同一答案）；
+--     * 现在统一为 `{0,1}`，与 `oSupSeq` / `aligns` 用**同一个起点项约定**，
+--       消除这处「看起来必须同步、实则不必」的隐患。
+candidates :: Int -> [CNF] -> Ctx -> (Ctx, [CNF])
+candidates depth os ctx0 = go [ drop k os | k <- [0, 1] ] ctx0 []
   where
     go [] ctx acc = (ctx, nubBy (==) (reverse acc))
-    go (os' : rest) ctx acc =
-      let (ctx1, sub) = if depth <= 0
-                          then (ctx, Nothing)
-                          else solveFS (depth - 1) (map lastExponent os') ctx
-          (q, (e0, _)) = splitLast (head os')
-          -- 候选 1：q + ω^(e0+1)（覆盖「末项系数在增长」与部分后继指数情形）
-          -- 候选 2/3：末项指数本身是极限时，用递归得到的 e 再套一层 ω^e
-          -- 注意：不做预筛，一律交给 aligns 验证，宁滥勿缺。
-          cs = [ oAdd q (oOmegaPow (oSucc e0)) ]
-               ++ [ oAdd q (oOmegaPow e) | Just e <- [sub] ]
-               ++ [ oAdd q (oOmegaPow (oSucc e)) | Just e <- [sub] ]
-      in go rest ctx1 (cs ++ acc)
-
-dropUpTo :: Int -> [a] -> [[a]]
-dropUpTo n xs = [ drop k xs | k <- [0 .. min n (length xs - 1)] ]
+    go (os' : rest) ctx acc
+      | null os' = go rest ctx acc
+      | otherwise =
+          let (ctx1, sub) = if depth <= 0
+                              then (ctx, Nothing)
+                              else solveFS (depth - 1) (map lastExponent os') ctx
+              (q, (e0, _)) = splitLast (head os')
+              -- 候选 1：q + ω^(e0+1)（覆盖「末项系数在增长」与部分后继指数情形）
+              -- 候选 2/3：末项指数本身是极限时，用递归得到的 e 再套一层 ω^e
+              -- 注意：不做预筛，一律交给 aligns 验证，宁滥勿缺。
+              cs = [ oAdd q (oOmegaPow (oSucc e0)) ]
+                   ++ [ oAdd q (oOmegaPow e) | Just e <- [sub] ]
+                   ++ [ oAdd q (oOmegaPow (oSucc e)) | Just e <- [sub] ]
+          in go rest ctx1 (cs ++ acc)
 
 -- | 由基本列序列反推序数：在所有候选里取「能对齐的最小序数」。
 --
@@ -177,14 +221,12 @@ solveFS depth os ctx
              in if not ok
                   then (ctx, Nothing)
                   else
-                    let (ctx2, cands) = candidates depth maxDrop os ctx1
+                    let (ctx2, cands) = candidates depth os ctx1
                     in case [ t | t <- cands, aligns t os ] of
                          [] -> (rememberOrd os Nothing ctx2, Nothing)
                          hits ->
                            let t = minimumBy (\a b -> oCmp a b) hits
                            in (rememberOrd os (Just t) ctx2, Just t)
-  where
-    maxDrop = 2
 
 -- | 「可解析前缀」版：当完整基本列里有项定不出来时（见 ordOf 里的说明），
 -- 退而用**已知前缀** + oSupSeq 反推极限。
@@ -259,7 +301,7 @@ ordOf k depth cols ctx
           in (c1, fmap oSucc r)
       | otherwise =
           let m = fromCols cs
-              fsList = [ fmap matrixColumns (expandBMS m n)
+              fsList = [ fmap matrixColumns (expandWith (cVersion ctx) m n)
                        | n <- [0 .. toInteger k] ]
           in case sequence fsList of
                Nothing -> (c, Nothing)
@@ -300,12 +342,25 @@ main = do
   hSetBuffering stdout LineBuffering
   hSetBuffering stderr LineBuffering
   args <- getArgs
-  let (rows, maxCols, maxVal, k, fuel) = case args of
+  -- 形如 --bm=BM3.3 的开关可以放在任意位置；其余的是位置参数。
+  let (flags, positional) = partition isFlag args
+      isFlag a = take 2 a == "--"
+      versionArg = case [ drop 5 f | f <- flags, take 5 f == "--bm=" ] of
+                     (v : _) -> v
+                     []      -> versionName bm4
+  version <- case lookupVersion versionArg of
+    Just v  -> pure v
+    Nothing -> do
+      hPutStrLn stderr ("未知版本：" ++ versionArg)
+      hPutStrLn stderr ("可用版本：" ++ intercalate ", " (map versionName versions))
+      ioError (userError "unknown BMS version")
+  let (rows, maxCols, maxVal, k, fuel) = case positional of
         [a, b, c]       -> (read a, read b, read c, 4, fuelBudget)
         [a, b, c, d]    -> (read a, read b, read c, read d, fuelBudget)
         [a, b, c, d, e] -> (read a, read b, read c, read d, read e)
         _               -> (1, 5, 3, 4, fuelBudget)
-  putStrLn ("序数分析：行数 = " ++ show rows
+  putStrLn ("序数分析：版本 = " ++ versionName version
+            ++ "，行数 = " ++ show rows
             ++ "，列数 ≤ " ++ show maxCols
             ++ "，数值 ≤ " ++ show maxVal
             ++ "，基本列深度 n = 0.." ++ show k
@@ -319,7 +374,7 @@ main = do
         let ctx0 = ctx { cFuel = fuel }
             (ctx', r) = ordOf k 20 cols ctx0
         in (ctx', (cols, r) : acc)
-      (_, revResults) = foldl' step (freshCtx fuel, []) ms
+      (_, revResults) = foldl' step (freshCtx version fuel, []) ms
       results = reverse revResults
       total = length results
   -- 进度打到 stderr，不污染 stdout 的结果格式；每 10 个（以及最后一个）报一次，
@@ -327,7 +382,7 @@ main = do
   mapM_ (\(i, r) -> do
             when (i `mod` 10 == 0 || i == total) $
               hPutStrLn stderr ("  [进度] 已分析 " ++ show i ++ "/" ++ show total)
-            report k r)
+            report version k r)
         (zip [1 ..] results)
   let ok = length [ () | (_, Just _) <- results ]
   putStrLn ("---- 已定序 " ++ show ok ++ " 个；unresolved "
@@ -335,7 +390,8 @@ main = do
   putStrLn ("每个矩阵的燃料预算：" ++ show fuel
             ++ "（该矩阵内燃料/深度耗尽即标 unresolved —— 这是为了永不卡死）")
   putStrLn "提示：把 unresolved 的矩阵发到 issue / PR，任何人都可以帮忙补。"
-  putStrLn "（期望值必须能由本仓库的定义 + 基本列交叉验证得到，禁止照抄外部原文。）"
+  putStrLn "（期望值必须能由本仓库的定义 + 基本列交叉验证得到；不得搬运外部资料的「表达」，）"
+  putStrLn "（数学事实可用，但请标注出处。详见 CONTRIBUTING.md 铁律二。）"
 
 -- | **每个矩阵**的步数预算（逐矩阵独立，不是全局总量）。
 -- 调大可提高覆盖率，但会更慢；调小则更快、更多 unresolved。
@@ -355,17 +411,17 @@ fuelBudget = 2000
 maxAnalyzedCols :: Int
 maxAnalyzedCols = 200
 
-report :: Int -> ([[Integer]], Maybe CNF) -> IO ()
-report _ (cols, Just t) =
+report :: Version -> Int -> ([[Integer]], Maybe CNF) -> IO ()
+report _ _ (cols, Just t) =
   putStrLn ("  " ++ pad (prettyCols cols) ++ "= " ++ oShow t)
-report k (cols, Nothing)
+report version k (cols, Nothing)
   | length cols > maxAnalyzedCols = do
       putStrLn ("  " ++ pad (prettyColsCapped maxShownCols cols) ++ "= unresolved")
       putStrLn ("      （矩阵列数 " ++ show (length cols) ++ " > "
                 ++ show maxAnalyzedCols ++ "，已略去基本列以免展示爆炸）")
   | otherwise = do
       let m = fromCols cols
-          fsList = [ fmap matrixColumns (expandBMS m n) | n <- [0 .. toInteger k] ]
+          fsList = [ fmap matrixColumns (expandWith version m n) | n <- [0 .. toInteger k] ]
           shown = case sequence fsList of
                     Just fss -> intercalate " , " (map (prettyColsCapped maxShownCols) fss)
                     Nothing  -> "<展开失败>"

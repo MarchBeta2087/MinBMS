@@ -1,0 +1,77 @@
+cabal-version:      2.4
+name:               minbms
+version:            0.1.0.0
+synopsis:           Bashicu Matrix System（BMS）的最小化 Haskell 实现，支持 BM4 / BM3.3 等多版本
+description:
+  BMS 的最小化实现：标准 BMS 的判定、三条展开规则、非常规序数（BO）与基本列，
+  外加一个康托范式序数引擎。支持多版本（BM4 / BM3.3），
+  版本间唯一的差别被抽象为一条 Ascension（坏部复制时哪些项加阶差）。
+  .
+  参见 README.md（定义）与 VERSIONS.md（版本与如何加版本）。
+
+-- MinBMS：Bashicu Matrix System 的 Haskell 最小化实现。
+-- 零第三方依赖（只用 GHC 自带的 base / containers）。
+--
+--   cabal build --enable-tests all
+--   cabal test all                                  -- 跑 Test.hs，全部通过才退出 0
+--   cabal run minbms                                -- 演示（Main.hs -> Demo.main）
+--   cabal run minbms-explore -- 1 5 3
+--   cabal run minbms-explore -- --bm=BM3.3 1 5 3
+license:            BSD-3-Clause
+license-file:       LICENSE
+author:             MinBMS contributors
+maintainer:         MinBMS contributors
+build-type:         Simple
+extra-source-files: README.md, CONTRIBUTING.md, VERSIONS.md
+tested-with:        GHC ==9.6.7
+
+library
+    exposed-modules:  BashicuMatrix
+                    , Ordinal
+                    , Version
+    hs-source-dirs:   .
+    build-depends:    base       >=4.14 && <5
+                    , containers >=0.6   && <0.8
+    default-language: Haskell2010
+    ghc-options:      -Wall
+
+-- Main.hs 只是转发到 Demo.main（沿用仓库原本的入口）。
+executable minbms
+    main-is:          Main.hs
+    other-modules:    Demo
+                    , BashicuMatrix
+                    , Ordinal
+                    , Version
+    hs-source-dirs:   .
+    build-depends:    base       >=4.14 && <5
+                    , containers >=0.6   && <0.8
+                    , minbms
+    default-language: Haskell2010
+    ghc-options:      -Wall
+
+executable minbms-explore
+    main-is:          Explore.hs
+    other-modules:    BashicuMatrix
+                    , Ordinal
+                    , Version
+    hs-source-dirs:   .
+    build-depends:    base       >=4.14 && <5
+                    , containers >=0.6   && <0.8
+                    , minbms
+    default-language: Haskell2010
+    ghc-options:      -Wall
+
+-- `cabal test` 直接跑 Test.hs：全部通过则打印「全部通过」并退出 0，
+-- 有失败则列出名称并退出非零。
+test-suite test
+    type:             exitcode-stdio-1.0
+    main-is:          Test.hs
+    other-modules:    BashicuMatrix
+                    , Ordinal
+                    , Version
+    hs-source-dirs:   .
+    build-depends:    base       >=4.14 && <5
+                    , containers >=0.6   && <0.8
+                    , minbms
+    default-language: Haskell2010
+    ghc-options:      -Wall

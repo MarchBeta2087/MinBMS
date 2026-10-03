@@ -1,6 +1,17 @@
 **
 !.gitignore
 !*.hs
-!README.md
+!*.md
 !LICENSE
-!CONTRIBUTING.md
+# 构建 / CI 配置（注意：默认规则 `**` 会静默忽略新文件，
+# 所以每加一类新文件都要在这里显式放行）
+!*.cabal
+!Makefile
+# 目录本身要先放行，git 才会进去看里面的内容
+!.github/
+!.github/**
+# 跨平台构建 / 清理脚本（build.sh / clean.sh / build.cmd / clean.cmd）
+!*.sh
+!*.cmd
+# 行尾符规则（.sh 需要 LF，.cmd 需要 CRLF）
+!.gitattributes
