@@ -22,7 +22,7 @@ module Ordinal
 import Data.List (intercalate)
 
 data CNF = CNF [(CNF, Integer)]
-  deriving (Eq)
+  deriving (Eq, Ord)
 
 oZero :: CNF
 oZero = CNF []

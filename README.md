@@ -85,7 +85,7 @@ data GBashicuOrdinal bms where
 
 ```bash
 runghc Test.hs              # 测试：黄金用例 + 性质/不变量 + 序数引擎自检
-runghc Explore.hs 1 6 5     # 枚举标准矩阵，并（交叉验证地）给出序数
+runghc Explore.hs 1 5 3     # 枚举标准矩阵，并（交叉验证地）给出序数
 runghc Explore.hs 2 4 4
 ```
 
