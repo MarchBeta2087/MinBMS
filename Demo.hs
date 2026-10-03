@@ -6,30 +6,30 @@ import BashicuMatrix
 --   runghc Demo.hs
 -- 或在 GHCi 中 :l Demo.hs 后输入 main
 
-type BMatrix = GBashicuMatrix [GColumn [Integer]]
+-- BMatrix / Position 等类型别名统一由 BashicuMatrix 导出，此处不再重复定义。
 
 ------------------------------------------------------------------------
 -- 示例矩阵
 ------------------------------------------------------------------------
 
--- (0,0)(1,1) = ω^ω
-omegaOmega :: BMatrix
-omegaOmega = initBMS [[0,1],[0,1]]
+-- (0,0)(1,1) = ε₀
+epsilonZero :: BMatrix
+epsilonZero = initBMS [[0,1],[0,1]]
 
--- (0,0)(1,1)(0,0) = ω^ω + 1
-omegaOmegaPlus1 :: BMatrix
-omegaOmegaPlus1 = initBMS [[0,1,0],[0,1,0]]
+-- (0,0)(1,1)(0,0) = ε₀ + 1
+epsilonZeroPlus1 :: BMatrix
+epsilonZeroPlus1 = initBMS [[0,1,0],[0,1,0]]
 
--- (0,0)(1,1)(0,0)(0,0) = ω^ω + 2
-omegaOmegaPlus2 :: BMatrix
-omegaOmegaPlus2 = initBMS [[0,1,0,0],[0,1,0,0]]
+-- (0,0)(1,1)(0,0)(0,0) = ε₀ + 2
+epsilonZeroPlus2 :: BMatrix
+epsilonZeroPlus2 = initBMS [[0,1,0,0],[0,1,0,0]]
 
 -- 《大数理论》式 (13.4)：(0,0,0)(1,1,1)(2,1,1)(3,1,0)(2,2,0)
 bookExample1 :: BMatrix
 bookExample1 = initBMS [[0,1,2,3,2],[0,1,1,1,2],[0,1,1,0,0]]
 
 -- 非等长输入：各列末尾省略的 0 会自动补齐
--- initBMS [[0,1],[0,1],[0]] = (0,0,0)(1,1,0) = ω^ω
+-- initBMS [[0,1],[0,1],[0]] = (0,0,0)(1,1,0)（3 行；本工具不对 ≥3 行的序数做承诺）
 raggedInput :: BMatrix
 raggedInput = initBMS [[0,1],[0,1],[0]]
 
@@ -85,8 +85,8 @@ demoSequence label m = case ordinalSequence m of
 main :: IO ()
 main = do
   putStrLn "== 1. 构造与显示 =="
-  putStrLn "omegaOmega ="
-  showMatrix omegaOmega
+  putStrLn "epsilonZero ="
+  showMatrix epsilonZero
   -- BMS [[0,0],[1,1]]
   -- 0 1
   -- 0 1
@@ -101,16 +101,16 @@ main = do
   -- 0 0
   hr
 
-  putStrLn "== 3. expandBMS：末列非全零（规则 3），ω^ω 的基本列 =="
-  mapM_ (demoExpand "omegaOmega" omegaOmega) [0 .. 3]
-  -- omegaOmega [0] = BMS []              （好部为空，复制 0 次）
-  -- omegaOmega [1] = BMS [[0,0]]         = 1
-  -- omegaOmega [2] = BMS [[0,0],[1,0]]   = ω
-  -- omegaOmega [3] = BMS [[0,0],[1,0],[2,0]] = ω^2
+  putStrLn "== 3. expandBMS：末列非全零（规则 3），ε₀ 的基本列 =="
+  mapM_ (demoExpand "epsilonZero" epsilonZero) [0 .. 3]
+  -- epsilonZero [0] = BMS []              （好部为空，复制 0 次）
+  -- epsilonZero [1] = BMS [[0,0]]         = 1
+  -- epsilonZero [2] = BMS [[0,0],[1,0]]   = ω
+  -- epsilonZero [3] = BMS [[0,0],[1,0],[2,0]] = ω^ω
   hr
 
   putStrLn "== 4. expandBMS：末列全零（规则 2，后继序数删去末列）与空矩阵（规则 1）=="
-  demoExpand "omegaOmegaPlus1" omegaOmegaPlus1 2
+  demoExpand "epsilonZeroPlus1" epsilonZeroPlus1 2
   -- BMS [[0,0],[1,1]]    （删去全零末列，与复制次数无关）
   demoExpand "initBMS []" (initBMS []) 4
   -- BMS []
@@ -123,18 +123,18 @@ main = do
   hr
 
   putStrLn "== 6. normalizeBMS：BMS + x 分解 =="
-  demoNormalize "omegaOmega"      omegaOmega
+  demoNormalize "epsilonZero"      epsilonZero
   -- BMS [[0,0],[1,1]] + 0
-  demoNormalize "omegaOmegaPlus2" omegaOmegaPlus2
+  demoNormalize "epsilonZeroPlus2" epsilonZeroPlus2
   -- BMS [[0,0],[1,1]] + 2
   demoNormalize "bookExample1"    bookExample1
   -- BMS [[0,0,0],[1,1,1],[2,1,1],[3,1,0],[2,2,0]] + 0
   hr
 
   putStrLn "== 7. mkOrdinal + expandedBMS：非常规序数「基本列第 n 项 + 偏移」=="
-  demoOrdinal "omegaOmegaPlus2" omegaOmegaPlus2 4
+  demoOrdinal "epsilonZeroPlus2" epsilonZeroPlus2 4
   -- BO {matrix = BMS [[0,0],[1,1]], copies = 4, offset = 2}
-  -- 展开 = BMS [[0,0],[1,0],[2,0],[3,0],[0,0],[0,0]]，即 ω^ω[4] + 2 = ω^3 + 2
+  -- 展开 = BMS [[0,0],[1,0],[2,0],[3,0],[0,0],[0,0]]，即 ε₀[4] + 2 = ω^ω^ω + 2
   demoOrdinal "bookExample1" bookExample1 1
   -- BO {matrix = ..., copies = 1, offset = 0}
   -- 展开 = BMS [[0,0,0],[1,1,1],[2,1,1],[3,1,0]]（好部 + 原始坏部）

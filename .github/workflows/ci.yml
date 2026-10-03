@@ -1,0 +1,137 @@
+# CI：构建 + 测试 + 冒烟。
+#
+# 三个系统、两档 GHC 都跑一遍，确保「零第三方依赖」的说法是真的
+# （除了 GHC 自带的 base / containers，没有任何外部依赖）。
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: ${{ matrix.os }} / GHC ${{ matrix.ghc }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os:  [ubuntu-latest, macos-latest, windows-latest]
+        ghc: ["9.6.7", "9.10.2"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup GHC / cabal
+        uses: haskell-actions/setup@v2
+        with:
+          ghc-version:   ${{ matrix.ghc }}
+          cabal-version: "3.10.2.0"
+
+      - name: Cache cabal
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cabal/packages
+            ~/.cabal/store
+            dist-newstyle
+          key: ${{ runner.os }}-ghc${{ matrix.ghc }}-${{ hashFiles('**/*.cabal') }}
+          restore-keys: ${{ runner.os }}-ghc${{ matrix.ghc }}-
+
+      - name: cabal update
+        run: cabal update
+
+      - name: Build (library + executables + test-suite)
+        run: cabal build --enable-tests all
+
+      - name: Test
+        run: cabal test all
+
+      # 冒烟：两个版本都能跑起来，且不因未知版本/参数崩溃。
+      - name: Smoke - BM4
+        run: cabal run minbms-explore -- 1 4 3
+
+      - name: Smoke - BM3.3
+        run: cabal run minbms-explore -- --bm=BM3.3 1 4 3
+
+      - name: Smoke - demo
+        run: cabal run minbms
+
+  # 文档里写的构建方式（Makefile）也要能用，别让文档和实际脱节。
+  makefile:
+    name: ${{ matrix.os }} / make
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup GHC
+        uses: haskell-actions/setup@v2
+        with:
+          ghc-version:   "9.6.7"
+          cabal-version: "3.10.2.0"
+
+      - name: make build
+        run: make build
+
+      - name: make test
+        run: make test
+
+      - name: make demo
+        run: make demo
+
+      - name: make explore
+        run: make explore ARGS="1 4 3"
+
+  # 便捷脚本（build.sh / clean.sh、build.cmd / clean.cmd）也要真的能用。
+  # 它们的 ghc 参数是 Makefile 的复刻 —— 这个 job 防止脚本与 Makefile 漂移，
+  # 并验证「重复清理」不会因产物已不存在而失败。
+  scripts:
+    name: ${{ matrix.os }} / scripts
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup GHC
+        uses: haskell-actions/setup@v2
+        with:
+          ghc-version:   "9.6.7"
+          cabal-version: "3.10.2.0"
+
+      - name: build.sh
+        if: runner.os != 'Windows'
+        run: ./build.sh
+
+      - name: smoke (Test)
+        if: runner.os != 'Windows'
+        run: ./Test
+
+      - name: clean.sh
+        if: runner.os != 'Windows'
+        run: ./clean.sh
+
+      - name: clean.sh again（产物已不存在也不能报错）
+        if: runner.os != 'Windows'
+        run: ./clean.sh
+
+      - name: build.cmd
+        if: runner.os == 'Windows'
+        run: .\build.cmd
+
+      - name: smoke (Test.exe)
+        if: runner.os == 'Windows'
+        run: .\Test.exe
+
+      - name: clean.cmd
+        if: runner.os == 'Windows'
+        run: .\clean.cmd
+
+      - name: clean.cmd again（产物已不存在也不能报错）
+        if: runner.os == 'Windows'
+        run: .\clean.cmd

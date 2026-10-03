@@ -11,6 +11,9 @@ data GColumn xs where
 data GBashicuMatrix bms where
     BMS :: [GColumn [Integer]] -> GBashicuMatrix [GColumn [Integer]]
 
+-- | 实际使用的矩阵类型（GADT 只有这一种实例化，写全名太长，故取个别名）。
+type BMatrix = GBashicuMatrix [GColumn [Integer]]
+
 -- BO matrix copies offset 表示序数 (matrix 的基本列的第 copies 项) + offset。
 -- 不变式：matrix 是末列非全零的标准 BMS（极限矩阵）或空矩阵，copies、offset 均非负。
 data GBashicuOrdinal bms where
@@ -272,8 +275,29 @@ ordinalSequence matrix
       let (limitPart, offset) = normalizeBMS matrix
       in Just (map (\copies -> BO limitPart copies offset) [0 ..])
 
-expandBMS :: GBashicuMatrix bms -> Integer -> Maybe (GBashicuMatrix [GColumn [Integer]])
-expandBMS matrix copies
+-- | 「坏部复制时哪些项要加阶差」的判定规则。
+--
+--   给定矩阵与坏根所在列，返回一个「位置 -> 是否加阶差」的查询函数。
+--   （先给矩阵再给位置，是为了让版本可以预先算好整张掩码，而不是逐项重算。）
+--
+--   **BMS 各个版本的差别只在这一个地方**（见 Version.hs 与 VERSIONS.md）：
+--   好部、坏部、坏根、阶差向量的定义在所有版本里都一样，
+--   只有「复制时加不加」的判定因版本而异。
+type Ascension = BMatrix -> Int -> (Position -> Bool)
+
+-- | BM4（现行版本）的规则：坏部中位于 (c, y) 的项加阶差，当且仅当它
+--   在第 y 行的祖先链包含坏根列上的 (坏根列, y)。
+--
+--   注意父项链只在同一行内传递，所以必须按项所在的行取坏根列上的对应项来判定，
+--   而不能直接用坏根位置本身（否则只有坏根所在的那一行的项才会被加上阶差）。
+--   另：本项目把「自身」也算作自己的祖先项（故坏根列自身的项一定加阶差）。
+ascendBM4 :: Ascension
+ascendBM4 matrix rootColumn =
+  \pos@(_, rowIndex) -> isAncestorOf matrix (rootColumn, rowIndex) pos
+
+-- | 按指定版本展开。这是所有版本的公共入口。
+expandBMSWith :: Ascension -> BMatrix -> Integer -> Maybe BMatrix
+expandBMSWith ascends matrix copies
   | copies < 0 = Nothing
   -- 规则 1：空矩阵所对应的序数为 0
   | null columns = Just (BMS [])
@@ -287,31 +311,30 @@ expandBMS matrix copies
       let rootColumn = fst rootPosition
           goodColumns = take rootColumn columns
           badColumns = take (length columns - rootColumn - 1) (drop rootColumn columns)
+          shifted = ascends matrix rootColumn
           -- 第 k 个副本（k = 0,1,...,copies-1）是坏部加上 k 倍阶差向量；
           -- 特别地，第 0 个副本就是不加阶差的原始坏部
           expandedBad =
             concatMap
-              (\k -> map (shiftedCopy rootColumn difference k) (zip [rootColumn ..] badColumns))
+              (\k -> map (shiftedCopy shifted difference k) (zip [rootColumn ..] badColumns))
               [0 .. copies - 1]
       pure (BMS (map C (goodColumns ++ expandedBad)))
   where
     columns = matrixColumns matrix
 
-    shiftedCopy rootColumn difference k (columnIndex, values) =
-      [ if shouldShift rootColumn (columnIndex, rowIndex)
+    shiftedCopy shifted difference k (columnIndex, values) =
+      [ if shifted (columnIndex, rowIndex)
            then value + k * valueAtOrZero difference rowIndex
            else value
         | (rowIndex, value) <- zip [0 ..] values
         ]
 
-    -- 坏部中位于 (columnIndex, rowIndex) 的项在复制时加上阶差，当且仅当
-    -- 它的（同行）祖先链包含坏根所在的列，即 (rootColumn, rowIndex)。
-    -- 父项链只在同一行内传递，因此必须按项所在的行取坏根列上的对应项来判定，
-    -- 而不能直接用坏根位置本身（否则只有坏根所在的那一行的项才会被加上阶差）。
-    shouldShift rootColumn (columnIndex, rowIndex) =
-      isAncestorOf matrix (rootColumn, rowIndex) (columnIndex, rowIndex)
-
     valueAtOrZero values index =
       case safeIndex values index of
         Just value -> value
         Nothing -> 0
+
+-- | 按 BM4（现行版本）展开。行为与此前的 expandBMS 完全一致，
+--   只是内部改为调用 expandBMSWith ascendBM4。
+expandBMS :: BMatrix -> Integer -> Maybe BMatrix
+expandBMS = expandBMSWith ascendBM4
