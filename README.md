@@ -67,7 +67,7 @@ data GBashicuOrdinal bms where
     BO :: GBashicuMatrix [GColumn [Integer]] -> Integer -> Integer -> GBashicuOrdinal [GColumn [Integer]]
 ```
 
-`BO matrix copies offset` 表示序数「`matrix` 的基本列的第 `copies` 项 + `offset`」。任意标准 BMS 都可以唯一地分解为极限部分加上若干个全零末列（每个全零末列对应序数 +1），`normalizeBMS` 执行这一分解，例如 `(0,0)(1,1)(0,0)(0,0)` 规范化为 `((0,0)(1,1), 2)`，即 ω^ω + 2。
+`BO matrix copies offset` 表示序数「`matrix` 的基本列的第 `copies` 项 + `offset`」。任意标准 BMS 都可以唯一地分解为极限部分加上若干个全零末列（每个全零末列对应序数 +1），`normalizeBMS` 执行这一分解，例如 `(0,0)(1,1)(0,0)(0,0)` 规范化为 `((0,0)(1,1), 2)`，即 ε₀ + 2。
 
 推荐使用 `mkOrdinal` 构造序数。它会检查 BMS 条件以及复制次数非负，并自动对矩阵做上述规范化分解。
 
@@ -90,7 +90,16 @@ runghc Explore.hs 2 4 4
 ```
 
 - `Test.hs`：全部通过时打印「全部通过」；有失败则列出名称并以非零码退出。
-- `Explore.hs` 用法：`runghc Explore.hs <行数> <最大列数> <最大数值> [基本列深度k]`。
+- `Explore.hs` 用法：`runghc Explore.hs <行数> <最大列数> <最大数值> [基本列深度k] [每矩阵燃料]`。
+- 燃料是**每个矩阵独立**的步数预算（默认 2000）：调大可提高覆盖率但更慢，调小则更快、
+  更多 `unresolved`。每个矩阵还受 `maxAnalyzedCols` 限制，所以在本仓库给出的参数范围内
+  **不会卡死**（实测 `Explore.hs 1 5 3` 与 `Explore.hs 2 4 4` 都在 ~1 秒级）。
+- **表示力上限（ε₀ 天花板，重要）**：内置序数引擎（`Ordinal.hs`）是康托范式，只能表示
+  **< ε₀** 的序数。而 2 行以上的矩阵只要某一列在第 2 行及以下出现非零项（例如
+  `(0,0)(1,1)`，它就是 ε₀），序数就 ≥ ε₀、**表示不出来**。`Explore.hs` 用
+  `representableInCNF` 在**不烧燃料**的前提下把这类矩阵直接判为 `unresolved`，
+  所以 2 行枚举里绝大多数都是 `unresolved` —— 这是**引擎的表示力**问题，不是矩阵不标准。
+  要真正定出它们，需要把引擎升级到 Veblen 范式（ε 数 / Γ₀），见待办。
 - `Explore.hs` **只输出能通过基本列交叉验证的序数**；验证不通过的一律标 `unresolved`
   并打印其基本列，**绝不猜测**。
 
