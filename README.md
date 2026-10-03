@@ -78,3 +78,25 @@ data GBashicuOrdinal bms where
 参考资料：
 
 《大数理论》（曹知秋，2026 年 8 月 30 日，[https://github.com/ZhiqiuCao/Googology](https://github.com/ZhiqiuCao/Googology)）Chapter 13.Bashicu 矩阵，13.1 BMS 的定义，P343、P344
+
+## 测试与序数分析
+
+本仓库附带两个**零依赖**小工具（只需 GHC，无需 cabal 包）：
+
+```bash
+runghc Test.hs              # 测试：黄金用例 + 性质/不变量 + 序数引擎自检
+runghc Explore.hs 1 6 5     # 枚举标准矩阵，并（交叉验证地）给出序数
+runghc Explore.hs 2 4 4
+```
+
+- `Test.hs`：全部通过时打印「全部通过」；有失败则列出名称并以非零码退出。
+- `Explore.hs` 用法：`runghc Explore.hs <行数> <最大列数> <最大数值> [基本列深度k]`。
+- `Explore.hs` **只输出能通过基本列交叉验证的序数**；验证不通过的一律标 `unresolved`
+  并打印其基本列，**绝不猜测**。
+
+## 如何加测试用例
+
+1. 打开 `Test.hs`，把新用例加进 `goldenChecks`（一行一项）或 `propertyChecks`；
+2. 期望值**必须**能由本仓库的定义（上面的展开规则）推导，并用 `expandBMS` 实测确认；
+3. 跑 `runghc Test.hs` 确认全绿；
+4. 详细规矩（尤其是许可证与「不许抄外部原文」）见 [CONTRIBUTING.md](CONTRIBUTING.md)。
