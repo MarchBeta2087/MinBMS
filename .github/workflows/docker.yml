@@ -1,0 +1,53 @@
+# basmat 对照环境（Docker）—— **只手动触发**。
+#
+# 为什么单独一个工作流、而且只手动触发：
+#   * 它要联网从上游拉 basmat 源码并编译（约 1–2 分钟）；
+#   * 主 CI（ci.yml）的卖点之一是「零第三方依赖、不联网」，不该被它拖累。
+# 但偶尔手动跑一次很值：它能证明「在一台干净的机器上，照着 docker/README.md 真的能跑起来」，
+# 而不是只在维护者的本机能跑。
+name: docker-basmat
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ["v*"]
+
+jobs:
+  basmat:
+    name: 构建镜像 + 冒烟 + 校准
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 构建镜像（在容器里编译 basmat）
+        run: docker compose -f docker/compose.yaml build
+
+      - name: 冒烟（帮助 + 一次真实计算 + 批处理）
+        run: |
+          docker compose -f docker/compose.yaml run --rm basmat -h
+          docker compose -f docker/compose.yaml run --rm basmat -d "(0)(1)(2)[3]"
+          printf '(0)(1)[2]\n(0,0)(1,1)[3]\n' | \
+            docker compose -f docker/compose.yaml run --rm -T basmat-batch
+
+      - name: Python 工具的离线单测（不需要 Docker）
+        run: |
+          python3 tools/test_basmat_client.py
+          python3 tools/test_ordinal_notation.py
+          python3 tools/test_standardness.py
+          python3 tools/test_bms_reference.py
+
+      - name: 校准断言（需要镜像）
+        run: python3 tools/test_calibration.py
+
+      - name: Setup GHC（Explore.exe 要用来做枚举）
+        uses: haskell-actions/setup@v2
+        with:
+          ghc-version: "9.6.7"
+
+      - name: 跑一轮搜索（枚举 → 批量取序数 → 对拍）
+        run: |
+          ./build.sh
+          python3 tools/search.py ordinals --rows 1 --cols 4 --maxval 3 --out /tmp/out.jsonl
+          python3 tools/search.py table --input /tmp/out.jsonl --format tsv
+          # 断点续跑：再来一次应当一条都不跑
+          python3 tools/search.py ordinals --rows 1 --cols 4 --maxval 3 --out /tmp/out.jsonl

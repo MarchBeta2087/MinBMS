@@ -4,6 +4,7 @@
 module BashicuMatrix where
 
 import Data.List (intercalate, transpose)
+import qualified Data.Set as Set
 
 data GColumn xs where
     C :: [Integer] -> GColumn [Integer]
@@ -338,3 +339,101 @@ expandBMSWith ascends matrix copies
 --   只是内部改为调用 expandBMSWith ascendBM4。
 expandBMS :: BMatrix -> Integer -> Maybe BMatrix
 expandBMS = expandBMSWith ascendBM4
+
+-- ---------------------------------------------------------------------------
+-- 标准性：种子展开闭包
+-- ---------------------------------------------------------------------------
+--
+-- README 的三条只是**必要条件**（`isBasicBMS`）；真正的标准性用下面的数学定义：
+--
+-- > 标准集 = 从「极限」种子 (0,..,0)(1,..,1)（行数 = 目标行数 + 1）出发、
+-- > 反复做基列展开所能到达的矩阵。
+--
+-- 种子展开一次后最底一行恒为 0，所以之后可以投影掉，只在 r 行里做展开闭包
+-- （对最底行全零的矩阵，r+1 行展开与 r 行展开只差一个全零行）。
+--
+-- 这个定义是实测锁定的：`Explore.exe 2 4 4` 的 83 个矩阵里，闭包判定与 basmat 的
+-- `Standard.` / `Not standard` 83/83 一致；1 行的 341 个候选也完全一致。
+-- 详见 tools/STANDARDNESS.md 与 tools/bms_reference.py。
+--
+-- 闭包只会生成**标准**矩阵，所以：
+--
+--   * 判 True 永远不会错（不会把非标准说成标准）；
+--   * 判 False 在界够大时才一定对 —— 界不够只会**漏报**（假阴性）。
+--     默认界按目标规模自动放大；需要更严时用 `isStandardBMSWith`。
+
+-- | 矩阵行数（按最高的列算；空矩阵为 0）。
+matrixHeight :: GBashicuMatrix bms -> Int
+matrixHeight matrix = maximum (0 : map length (matrixColumns matrix))
+
+-- | 把各列右侧补 0 到统一行数。
+padToHeight :: Int -> BMatrix -> BMatrix
+padToHeight height (BMS columns) =
+  BMS [C (values ++ replicate (height - length values) 0) | C values <- columns]
+
+-- | 行数为 `rows` 的 BMS 系统的「极限」种子 `(0,..,0)(1,..,1)`（`rows` 行）。
+standardSeed :: Int -> BMatrix
+standardSeed rows = BMS [C (replicate rows 0), C (replicate rows 1)]
+
+-- | 去掉最底一行（只用于种子展开结果，其最底一行恒为 0）。
+dropBottomRow :: BMatrix -> BMatrix
+dropBottomRow (BMS columns) = BMS [C (init values) | C values <- columns]
+
+-- | 闭包搜索的界：最大列数 / 元素上界 / 复制次数。
+data StandardBounds = StandardBounds
+  { boundCols    :: Int
+  , boundVal     :: Integer
+  , boundCopies  :: Int
+  }
+  deriving (Show, Eq)
+
+-- | 按目标规模给一组「通常够用」的界（与 tools/bms_reference.py 一致）。
+--   实测 `Explore.exe 2 4 4` 的 83 个矩阵在这个界下 83/83。
+defaultStandardBounds :: BMatrix -> StandardBounds
+defaultStandardBounds matrix = StandardBounds (n + 3) (v + 4) (n + 1)
+  where
+    n = length (matrixColumns matrix)
+    v = maximum (0 : concat (matrixColumns matrix))
+
+-- | 从种子出发的展开闭包（已投影到 `rows` 行），用列表示（`[[Integer]]`）。
+standardClosure :: Int -> StandardBounds -> Set.Set [[Integer]]
+standardClosure rows bounds = loop initial Set.empty
+  where
+    inBounds cols =
+      length cols <= boundCols bounds && all (all (<= boundVal bounds)) cols
+
+    children cols =
+      [ matrixColumns expanded
+      | n <- [1 .. boundCopies bounds]
+      , Just expanded <- [expandBMS (BMS (map C cols)) (toInteger n)]
+      , inBounds (matrixColumns expanded)
+      ]
+
+    initial =
+      [ matrixColumns (dropBottomRow expanded)
+      | n <- [1 .. boundCopies bounds]
+      , Just expanded <- [expandBMS (standardSeed (rows + 1)) (toInteger n)]
+      , let cols = matrixColumns (dropBottomRow expanded)
+      , inBounds cols
+      ]
+
+    loop [] seen = seen
+    loop (x : xs) seen
+      | Set.member x seen = loop xs seen
+      | otherwise = loop (children x ++ xs) (Set.insert x seen)
+
+-- | 判断标准性（用给定界）。
+isStandardBMSWith :: StandardBounds -> BMatrix -> Bool
+isStandardBMSWith bounds matrix
+  | null columns = True
+  | otherwise =
+      Set.member
+        (matrixColumns (padToHeight rows matrix))
+        (standardClosure rows bounds)
+  where
+    columns = matrixColumns matrix
+    rows = matrixHeight matrix
+
+-- | 判断标准性（默认界）。**判 True 一定对；判 False 需要界够大**（界不够只会漏报）。
+isStandardBMS :: BMatrix -> Bool
+isStandardBMS matrix = isStandardBMSWith (defaultStandardBounds matrix) matrix

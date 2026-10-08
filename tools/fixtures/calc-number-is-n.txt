@@ -1,0 +1,6 @@
+(0) is standard.
+--------------------------------------------
+Legend for ordinal: w = omega, e = epsilon, p = Bashicu's psi
+--------------------------------------------
+(0)[5]
+Finished. Calculated number = 5

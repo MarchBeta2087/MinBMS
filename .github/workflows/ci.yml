@@ -37,8 +37,19 @@ jobs:
           key: ${{ runner.os }}-ghc${{ matrix.ghc }}-${{ hashFiles('**/*.cabal') }}
           restore-keys: ${{ runner.os }}-ghc${{ matrix.ghc }}-
 
+      # Hackage 的 CDN 偶尔返回 403（transient）。重试几次，别让网络抖动红掉整个矩阵。
       - name: cabal update
-        run: cabal update
+        shell: bash
+        run: |
+          for attempt in 1 2 3 4 5; do
+            if cabal update; then
+              exit 0
+            fi
+            echo "::warning::cabal update failed (attempt $attempt); retry in 15s"
+            sleep 15
+          done
+          echo "::error::cabal update failed after 5 attempts"
+          exit 1
 
       - name: Build (library + executables + test-suite)
         run: cabal build --enable-tests all

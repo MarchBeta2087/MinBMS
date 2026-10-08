@@ -13,5 +13,19 @@
 # 跨平台构建 / 清理脚本（build.sh / clean.sh / build.cmd / clean.cmd）
 !*.sh
 !*.cmd
+# Docker（basmat 运行环境，见 docker/README.md）
+# 注意：这里**只有配方**，不含 basmat 源码或二进制（GPLv3，构建时按固定 commit 拉取）。
+# 目录本身要先放行，git 才会进去看里面的内容
+!docker/
+!docker/**
+# Python 工具（tools/：basmat 客户端 / 校准 / 搜索；只用标准库）
+!tools/
+!tools/**
 # 行尾符规则（.sh 需要 LF，.cmd 需要 CRLF）
 !.gitattributes
+# Python 的字节码缓存 / 测试缓存。注意：上面的 `!tools/**` 是白名单，
+# 会把 tools/ 里的**一切**放行（包括 __pycache__），所以这里必须在**后面**再排掉。
+# gitignore 的规则是「最后匹配者胜」，顺序不能调。
+__pycache__/
+*.pyc
+.pytest_cache/
