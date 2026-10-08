@@ -63,8 +63,13 @@ _UNRESOLVED_MARK = "unresolved"
 
 
 def default_explore() -> str:
-    """仓库里的 Explore 可执行文件（Windows 上带 .exe）。"""
-    return "Explore.exe" if sys.platform == "win32" else "Explore"
+    """仓库里的 Explore 可执行文件。
+
+    POSIX 上必须写 ``./Explore``：当前目录不在 PATH 里，直接写 ``Explore``
+    会报 ``[Errno 2] No such file or directory``（CI 上实测踩过）。
+    Windows 默认会搜当前目录，``Explore.exe`` 即可。
+    """
+    return "Explore.exe" if sys.platform == "win32" else "./Explore"
 
 
 def parse_explore_output(text: str) -> list[tuple[str, str | None]]:
