@@ -1,0 +1,55 @@
+#!/bin/sh
+# basmat-batch —— 在**一个**容器里连续跑多条 basmat 查询。
+#
+# 为什么需要它：Windows / Docker Desktop 上每开一个容器大约要 0.3–1 秒。
+# 搜索脚本一次要跑成百上千条，逐条 `docker run` 光启动开销就吃不消。
+# 本脚本从 stdin 逐行读入 ini 参数，在同一个进程空间里连续调用 basmat，
+# 并用机器可读的分隔行把每条的输出框起来，调用方按分隔行切段即可。
+#
+# 用法（注意 -i：要把 stdin 传进容器）：
+#
+#   docker run --rm -i --entrypoint basmat-batch minbms/basmat:4.0-f2f0125 < queries.txt
+#   docker compose -f docker/compose.yaml run --rm -T basmat-batch < queries.txt
+#
+# 输入格式：每行一个 basmat 的 ini 参数（即 `BM[n]`，不要加引号、不要有空格）。
+#   (0)(1)(2)[3]
+#   (0,0)(1,1)[3]
+#   # 以 # 开头的行是注释，空行忽略
+#
+# 每行固定传给 basmat 的选项由环境变量 BASMAT_ARGS 控制，默认 `-d -t 1`：
+#   `-d` 打开详细过程，`-t 1` 只算一步 —— 这正是「读初始矩阵的序数」最省的方式。
+# 想换：docker run --rm -i -e BASMAT_ARGS='-v 3.3 -d -t 1' --entrypoint basmat-batch ...
+#
+# 输出格式（每条的退出码一并给出，失败不会中断整批）：
+#   === BEGIN 1 ===
+#   <basmat 的原始输出，原样透传>
+#   === END 1 rc=0 ===
+#   ...
+#   === DONE 3 ===          <- 3 = 实际执行的条数
+#
+# 许可证：basmat 是 GPL-3.0 的第三方程序，本脚本只是调用它（不链接、不修改、不派生），
+# 本身仍属本仓库的 BSD-3-Clause。详见 docker/README.md。
+
+set -u
+
+ARGS="${BASMAT_ARGS--d -t 1}"
+
+# 统一去掉 CRLF 的行尾（Windows 上生成的查询文件常带 \r；
+# 带着 \r 传给 basmat 会让它解析不出矩阵）。
+# 用管道包一层会在子 shell 里跑循环，所以 DONE 也在里面打印。
+tr -d '\r' | {
+    n=0
+    while IFS= read -r ini; do
+        # 跳过空行与注释行
+        case "$ini" in
+            ''|'#'*) continue ;;
+        esac
+        n=$((n + 1))
+        printf '=== BEGIN %d ===\n' "$n"
+        # shellcheck disable=SC2086  # ARGS 需要按空格拆成多个参数
+        basmat $ARGS "$ini"
+        rc=$?
+        printf '=== END %d rc=%d ===\n' "$n" "$rc"
+    done
+    printf '=== DONE %d ===\n' "$n"
+}

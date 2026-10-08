@@ -16,6 +16,10 @@
 --   3. 表示力闸门：序数引擎（Ordinal.hs）只能表示 < ε₀ 的序数，故任何在第 2 行
 --      及以下含非零项的标准矩阵（序数 ≥ ε₀，如 (0,0)(1,1)）都直接放弃。
 --
+-- 标准性：先用 `isStandardBMS`（种子展开闭包，见 BashicuMatrix.hs）过滤 ——
+-- 不标准的矩阵**不烧燃料**，直接标 `(non-standard)`；只有标准矩阵才去定序。
+-- 因此输出分三类：`= 序数`、`= (non-standard)`、`= unresolved`（标准但定不出）。
+--
 -- 铁律：序号一栏只写「能通过基本列交叉验证」的结果；
 -- 验证不通过的矩阵一律标 unresolved，并原样打印其基本列供人工分析。
 module Main (main) where
@@ -27,6 +31,7 @@ import Version
 import Control.Monad (replicateM, when)
 import Data.List (foldl', intercalate, minimumBy, nubBy, partition, transpose)
 import qualified Data.Map.Strict as Map
+import qualified Data.Set as Set
 import System.Environment (getArgs)
 import System.IO
   ( BufferMode (LineBuffering)
@@ -367,13 +372,22 @@ main = do
             ++ "，燃料 = " ++ show fuel)
   putStrLn "unresolved = 本工具无法用基本列交叉验证的结果；绝不猜测。"
   let ms = enumerate rows maxCols maxVal
-  putStrLn ("枚举到 " ++ show (length ms) ++ " 个标准矩阵：")
+  -- 标准集：用**整次枚举的最大界**算一次闭包，然后对每个矩阵做成员判定。
+  -- 这样比逐矩阵算闭包快很多（闭包只生成标准矩阵，且成员判定的方向是可靠的：
+  -- 判 True 一定对；界不够只会漏报非标准，不会误报）。
+  let stdSet = standardClosure rows (StandardBounds (maxCols + 3) (maxVal + 4) (maxCols + 1))
+      isStd cols = Set.member cols stdSet
+  putStrLn ("枚举到 " ++ show (length ms) ++ " 个满足 BMS 三条件的矩阵"
+            ++ "（真正标准的会标序号；不标准的标 (non-standard)）：")
   let step (ctx, acc) cols =
         -- 每个矩阵独立预算：重置燃料，但保留跨矩阵的记忆表。
         -- 这样「前面的矩阵把燃料吃光、后面的矩阵凭空 unresolved」就不会发生。
         let ctx0 = ctx { cFuel = fuel }
-            (ctx', r) = ordOf k 20 cols ctx0
-        in (ctx', (cols, r) : acc)
+        in if not (isStd cols)
+             -- 先用标准集把它排除：不标准的**不烧燃料**，直接标 (non-standard)。
+             then (ctx0, (cols, Nothing, False) : acc)
+             else let (ctx', r) = ordOf k 20 cols ctx0
+                  in (ctx', (cols, r, True) : acc)
       (_, revResults) = foldl' step (freshCtx version fuel, []) ms
       results = reverse revResults
       total = length results
@@ -384,11 +398,12 @@ main = do
               hPutStrLn stderr ("  [进度] 已分析 " ++ show i ++ "/" ++ show total)
             report version k r)
         (zip [1 ..] results)
-  let ok = length [ () | (_, Just _) <- results ]
-  putStrLn ("---- 已定序 " ++ show ok ++ " 个；unresolved "
-            ++ show (length results - ok) ++ " 个 ----")
+  let ok = length [ () | (_, Just _, _) <- results ]
+      nonStd = length [ () | (_, _, False) <- results ]
+  putStrLn ("---- 已定序 " ++ show ok ++ " 个；非标准 " ++ show nonStd
+            ++ " 个；标准但 unresolved " ++ show (length results - ok - nonStd) ++ " 个 ----")
   putStrLn ("每个矩阵的燃料预算：" ++ show fuel
-            ++ "（该矩阵内燃料/深度耗尽即标 unresolved —— 这是为了永不卡死）")
+            ++ "（只对标准矩阵烧燃料；该矩阵内燃料/深度耗尽即标 unresolved —— 这是为了永不卡死）")
   putStrLn "提示：把 unresolved 的矩阵发到 issue / PR，任何人都可以帮忙补。"
   putStrLn "（期望值必须能由本仓库的定义 + 基本列交叉验证得到；不得搬运外部资料的「表达」，）"
   putStrLn "（数学事实可用，但请标注出处。详见 CONTRIBUTING.md 铁律二。）"
@@ -411,10 +426,12 @@ fuelBudget = 2000
 maxAnalyzedCols :: Int
 maxAnalyzedCols = 200
 
-report :: Version -> Int -> ([[Integer]], Maybe CNF) -> IO ()
-report _ _ (cols, Just t) =
+report :: Version -> Int -> ([[Integer]], Maybe CNF, Bool) -> IO ()
+report _ _ (cols, _, False) =
+  putStrLn ("  " ++ pad (prettyCols cols) ++ "= (non-standard)")
+report _ _ (cols, Just t, True) =
   putStrLn ("  " ++ pad (prettyCols cols) ++ "= " ++ oShow t)
-report version k (cols, Nothing)
+report version k (cols, Nothing, True)
   | length cols > maxAnalyzedCols = do
       putStrLn ("  " ++ pad (prettyColsCapped maxShownCols cols) ++ "= unresolved")
       putStrLn ("      （矩阵列数 " ++ show (length cols) ++ " > "

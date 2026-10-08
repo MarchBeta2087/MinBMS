@@ -63,6 +63,19 @@ am0 am1 am2 ... amn
 2. 同列中排在下面的项不大于排在上面的项。
 3. 每一个非零项都至多为其父项 +1。
 
+> **注意：这三条只是必要条件，不是充分条件。** 满足三条、但并不标准的例子：
+> `(0)(0)(1)`、`(0)(0)(1)(1)`、`(0,0,0)(1,1,1)(2,2,2)(3,2,2)(4,3,0)`。
+> 上面的三条由 `isBasicBMS` 判定；**完整的标准性**由 `isStandardBMS` 判定：
+>
+> > 标准集 = 从极限种子 `(0,...,0)(1,...,1)`（行数 = 目标行数 + 1）出发，
+> > 反复做基本列展开所能到达的矩阵。
+>
+> 也就是说，`M` 标准 ⇔ `M` 在该展开闭包里。闭包只生成标准矩阵，所以
+> `isStandardBMS` 判「标准」永远正确；判「非标准」需要界够大（界不够只会漏报，不会误报）。
+> 这条规律是与 basmat 的 `Standard.` / `Not standard` 实测对拍锁定的
+> （1 行 341/341、`Explore.exe 2 4 4` 的 83 个 83/83），详情与实现见
+> [tools/STANDARDNESS.md](tools/STANDARDNESS.md) 与 [tools/bms_reference.py](tools/bms_reference.py)。
+
 ## BMS 展开规则
 
 BMS 的展开规则如下：
@@ -165,6 +178,49 @@ runghc Explore.hs --bm=BM3.3 1 5 3    # 换一个版本
   要真正定出它们，需要把引擎升级到 Veblen 范式（ε 数 / Γ₀），见待办。
 - `Explore.hs` **只输出能通过基本列交叉验证的序数**；验证不通过的一律标 `unresolved`
   并打印其基本列，**绝不猜测**。
+- `Explore.hs` 现在先用 `isStandardBMS` 过滤：**不标准的矩阵不烧燃料**，直接标
+  `(non-standard)`；只有标准矩阵才去（尝试）定序。所以每行结果是三者之一：
+  `= 序数` / `= (non-standard)` / `= unresolved`（标准但定不出）。
+  注意它枚举的是**满足 README 三条件**的矩阵（必要条件），不是全部矩阵。
+
+## 与 basmat 对照（可选，Docker）
+
+本仓库自己**不实现** ε₀ 以上的序数，但可以拿**独立实现**
+[basmat](https://github.com/kyodaisuu/basmat)（Bashicu Matrix Calculator，GPL-3.0）
+给 `Explore.hs` 标 `unresolved` 的矩阵补一个**外部参考序数**，并交叉验证已定序的结果：
+
+```bash
+docker compose -f docker/compose.yaml build          # 在容器里编译 basmat（约 1 分钟）
+docker compose -f docker/compose.yaml run --rm basmat -d "(0)(1)(2)[3]"
+
+python tools/search.py ordinals --rows 2 --cols 4 --maxval 4 --only-unresolved --out out.jsonl
+python tools/search.py table --input out.jsonl
+```
+
+实测收益：`Explore.exe 2 4 4` 的 83 个 `unresolved` 里 **42 个**拿到了序数，其中包括
+`(0,0)(1,1) = e_0`、`(0,0)(1,1)(1,1) = e_1`、`(0,0)(1,1)(2,0) = e_w`、
+`(0,0)(1,1)(2,2) = p0(p1(p2(0)))`。
+
+校准过程中**实测**出三处必须显式处理的差异（细节与复现命令见
+[tools/README.md](tools/README.md)）：
+
+1. **份数差 1**：basmat 的 `[n]` = 好部 + **(n+1)** 份坏部，本仓库是 n 份
+   ⇒ 等价地 `basmat[n] ≡ 本仓库[n+1]`（证据是 VERSIONS.md 里本仓库自己锁死的黄金值）；
+2. **标准性判定不同**：basmat 用「从固定种子出发的递降序列」判定，
+   判不标准就**不给序数** —— 83 个里有 41 个属于这种（本仓库认为它们是标准矩阵）；
+3. **`Ord` 里不含常数项**：末尾的全零列被它逐步消去了，要按「末尾几个零括号」补回来，
+   注意数的是**列**：`(0,0)(0,0)(0,0)` 是 3 个零括号，不是 6 个 0。
+
+> **这些序数只能当外部参考**：`Test.hs` 的期望值仍必须能由本仓库的定义推导出来
+> （CONTRIBUTING.md 铁律一/二）。
+>
+> basmat 是 **GPL-3.0** 的第三方程序：本仓库**不包含**它的源码或二进制，
+> Dockerfile 只在构建时按**固定 commit** 从上游拉取（许可证说明见
+> [docker/README.md](docker/README.md)）。我们只把它当**另一个进程**调用、
+> 解析它的 stdout，不链接、不修改、不派生。
+
+Python 工具只用标准库（沿用本仓库「零第三方依赖」的脾气）；
+日常开发**不需要** Docker —— 只有 `tools/test_calibration.py` 与 `search.py` 需要。
 
 ## 如何加测试用例
 
@@ -172,6 +228,7 @@ runghc Explore.hs --bm=BM3.3 1 5 3    # 换一个版本
    - `goldenChecks`：矩阵 → 矩阵（BM4 的黄金展开）；
    - `propertyChecks`：性质与不变量；
    - `versionChecks`：**多版本**相关（BM4 行为不变、BM3.3 分歧算例、各版本展开仍是标准 BMS）；
+   - `standardnessChecks`：**标准性**（`isStandardBMS` 的种子展开闭包：标准与非标准样例）；
    - `ordinalChecks`：序数引擎自检。
 2. 期望值**必须**能由本仓库的定义（上面的展开规则 + [VERSIONS.md](VERSIONS.md)）推导，
    并用 `expandBMS` / `expandWith` 实测确认；

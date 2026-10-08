@@ -1,0 +1,15 @@
+Checking if (0,0)(0,0)(1,1) is standard or not.
+Decreasing sequence from (0,0,0)(1,1,1) follows.
+(0,0)(1,1)
+(0,0)(1,0)
+Not standard because it is (0,0)(0,0)(0,0)...
+--------------------------------------------
+(0,0)(0,0)(1,1)[3]
+G = (0,0)
+B = (0,0)
+Delta = (1,0)
+C = (1,1)
+f(n) = 3
+--------------------------------------------
+(0,0)(0,0)(1,0)(2,0)(3,0)[3]
+Maximum step of calculation 1 has reached.

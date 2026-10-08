@@ -1,0 +1,12 @@
+Checking if (0)(0)(0) is standard or not.
+Decreasing sequence from (0,0)(1,1) follows.
+(0)(1)
+(0)(0)(0)
+Standard.
+--------------------------------------------
+Legend for ordinal: w = omega, e = epsilon, p = Bashicu's psi
+--------------------------------------------
+(0)(0)(0)[3]
+--------------------------------------------
+(0)(0)[3]
+Maximum step of calculation 1 has reached.

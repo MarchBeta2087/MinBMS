@@ -16,6 +16,7 @@ import Ordinal
 
 import Data.List (transpose)
 import Data.Maybe (isNothing)
+import qualified Data.Set as Set
 import System.Exit (exitFailure)
 import Version       -- 多版本（BM4 / BM3.3）回归测试
 
@@ -186,6 +187,44 @@ noDeltaSubset a b m = case badRoot m of
     in and [ versionAscend b m rc p || not (versionAscend a m rc p) | p <- ps ]
 
 ------------------------------------------------------------------------
+-- 标准性（种子展开闭包）
+------------------------------------------------------------------------
+
+-- | 期望值来自 tools/STANDARDNESS.md 的实测结论：
+--   README 三条（isBasicBMS）只是必要条件；真正的标准性 = 在
+--   (0,..,0)(1,..,1)（行数+1）的展开闭包里。这些用例也已与 basmat 对拍一致。
+standardnessChecks :: [Check]
+standardnessChecks =
+  [ Check "(0)(1) 标准（ω）" (isStandardBMS (fromCols [[0], [1]]))
+  , Check "(0)(0)(1) 不标准（三条件之外）"
+      (not (isStandardBMS (fromCols [[0], [0], [1]])))
+  , Check "(0,0)(1,1) 标准（ε₀）"
+      (isStandardBMS (fromCols [[0, 0], [1, 1]]))
+  , Check "(0,0)(1,1)(2,0) 标准（e_ω）"
+      (isStandardBMS (fromCols [[0, 0], [1, 1], [2, 0]]))
+  , Check "(0,0)(1,1)(1,1) 标准（e_1）"
+      (isStandardBMS (fromCols [[0, 0], [1, 1], [1, 1]]))
+  , Check "(0,0,0)(1,1,1)(2,2,2)(3,2,2)(4,2,0) 标准"
+      (isStandardBMS (fromCols [[0, 0, 0], [1, 1, 1], [2, 2, 2], [3, 2, 2], [4, 2, 0]]))
+  , Check "(0,0,0)(1,1,1)(2,2,2)(3,2,2)(4,3,0) 不标准（被下探序列跨过）"
+      (not (isStandardBMS (fromCols [[0, 0, 0], [1, 1, 1], [2, 2, 2], [3, 2, 2], [4, 3, 0]])))
+  , Check "标准 ⇒ isBasicBMS（必要条件不被违反）"
+      (and [ isBasicBMS m | m <- standardnessSamples, isStandardBMS m ])
+  , Check "前缀封闭：标准矩阵的每个前缀都标准"
+      (let cl = standardClosure 2 (StandardBounds 6 6 4)
+           prefixes m = [ take i m | i <- [0 .. length m] ]
+       in all (all (`Set.member` cl) . prefixes) (Set.toList cl))
+  ]
+  where
+    standardnessSamples =
+      [ fromCols [[0], [1]]
+      , fromCols [[0, 0], [1, 1]]
+      , fromCols [[0, 0], [1, 1], [2, 0]]
+      , fromCols [[0, 0], [1, 1], [1, 1]]
+      , fromCols [[0, 0, 0], [1, 1, 1], [2, 2, 2], [3, 2, 2], [4, 2, 0]]
+      ]
+
+------------------------------------------------------------------------
 -- 序数引擎自检（Ordinal.hs）
 ------------------------------------------------------------------------
 
@@ -243,7 +282,8 @@ ordinalChecks =
 
 main :: IO ()
 main = do
-  let allChecks = goldenChecks ++ propertyChecks ++ versionChecks ++ ordinalChecks
+  let allChecks = goldenChecks ++ propertyChecks ++ versionChecks
+                  ++ standardnessChecks ++ ordinalChecks
       fails = [ name | Check name ok <- allChecks, not ok ]
   putStrLn ("共 " ++ show (length allChecks)
             ++ " 项检查，失败 " ++ show (length fails) ++ " 项。")

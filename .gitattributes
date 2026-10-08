@@ -7,3 +7,8 @@
 #   ./build.sh: /bin/sh^M: bad interpreter: No such file or directory
 *.sh  text eol=lf
 *.cmd text eol=crlf
+
+# docker/basmat-batch 是**容器内**执行的 POSIX sh 脚本（文件名不带 .sh 后缀，
+# 上面那条 *.sh 管不到它）。它必须以 LF 结尾，否则容器里会报
+#   /usr/local/bin/basmat-batch: /bin/sh^M: bad interpreter
+docker/basmat-batch text eol=lf

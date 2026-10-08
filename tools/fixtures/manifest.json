@@ -1,0 +1,175 @@
+{
+  "image": "minbms/basmat:4.0-f2f0125",
+  "captured_at_utc": "2026-10-08T08:21:22+00:00",
+  "note": "原始 stdout，未经任何加工；改 basmat 版本后请重新 capture 再看差异。",
+  "probes": [
+    {
+      "name": "copy-1row-omega",
+      "ini": "(0)(1)[3]",
+      "options": "-d -t 1",
+      "why": "1 行最小极限 ω：看 [n] 复制几份坏部",
+      "rc": 0,
+      "cmd": "docker run --rm minbms/basmat:4.0-f2f0125 -d -t 1 \"(0)(1)[3]\""
+    },
+    {
+      "name": "copy-2row-omega",
+      "ini": "(0,0)(1,0)[3]",
+      "options": "-d -t 1",
+      "why": "同一个 ω，但好部为空：验证份数与行数/好部无关",
+      "rc": 0,
+      "cmd": "docker run --rm minbms/basmat:4.0-f2f0125 -d -t 1 \"(0,0)(1,0)[3]\""
+    },
+    {
+      "name": "copy-1row-ww",
+      "ini": "(0)(1)(2)[3]",
+      "options": "-d -t 1",
+      "why": "ω^ω：Δ = 0 时只看份数",
+      "rc": 0,
+      "cmd": "docker run --rm minbms/basmat:4.0-f2f0125 -d -t 1 \"(0)(1)(2)[3]\""
+    },
+    {
+      "name": "ord-epsilon0",
+      "ini": "(0,0)(1,1)[3]",
+      "options": "-d -t 1",
+      "why": "ε₀：超出本仓库序数引擎的表示力",
+      "rc": 0,
+      "cmd": "docker run --rm minbms/basmat:4.0-f2f0125 -d -t 1 \"(0,0)(1,1)[3]\""
+    },
+    {
+      "name": "const-offset",
+      "ini": "(0)(1)(2)(0)(0)[3]",
+      "options": "-d -t 1",
+      "why": "常数项 = 2 个零括号（样本来自用户）",
+      "rc": 0,
+      "cmd": "docker run --rm minbms/basmat:4.0-f2f0125 -d -t 1 \"(0)(1)(2)(0)(0)[3]\""
+    },
+    {
+      "name": "const-pure-zero",
+      "ini": "(0)(0)(0)[3]",
+      "options": "-d -t 1",
+      "why": "纯零括号：常数项 = 3",
+      "rc": 0,
+      "cmd": "docker run --rm minbms/basmat:4.0-f2f0125 -d -t 1 \"(0)(0)(0)[3]\""
+    },
+    {
+      "name": "golden-bm4",
+      "ini": "(0,0,0)(1,1,1)(2,1,0)(1,1,1)[3]",
+      "options": "-v 4 -d -t 1",
+      "why": "VERSIONS.md 黄金分歧算例：BM4",
+      "rc": 0,
+      "cmd": "docker run --rm minbms/basmat:4.0-f2f0125 -v 4 -d -t 1 \"(0,0,0)(1,1,1)(2,1,0)(1,1,1)[3]\""
+    },
+    {
+      "name": "golden-bm33",
+      "ini": "(0,0,0)(1,1,1)(2,1,0)(1,1,1)[3]",
+      "options": "-v 3.3 -d -t 1",
+      "why": "VERSIONS.md 黄金分歧算例：BM3.3",
+      "rc": 0,
+      "cmd": "docker run --rm minbms/basmat:4.0-f2f0125 -v 3.3 -d -t 1 \"(0,0,0)(1,1,1)(2,1,0)(1,1,1)[3]\""
+    },
+    {
+      "name": "psi-2row",
+      "ini": "(0,0)(1,1)(2,2)(3,3)(3,2)[3]",
+      "options": "-d -t 1",
+      "why": "上游文档的 ψ(ψ_1(Ω_2))：远超 ε₀",
+      "rc": 0,
+      "cmd": "docker run --rm minbms/basmat:4.0-f2f0125 -d -t 1 \"(0,0)(1,1)(2,2)(3,3)(3,2)[3]\""
+    },
+    {
+      "name": "rise-chain",
+      "ini": "(0)(1)(2)(1)(0)(1)(2)(1)(0)(1)(1)(1)(1)[3]",
+      "options": "-d -t 1",
+      "why": "CONTRIBUTING 里的「无限上升链」矩阵",
+      "rc": 0,
+      "cmd": "docker run --rm minbms/basmat:4.0-f2f0125 -d -t 1 \"(0)(1)(2)(1)(0)(1)(2)(1)(0)(1)(1)(1)(1)[3]\""
+    },
+    {
+      "name": "hardy-mode",
+      "ini": "(0,0)(1,1)[3]",
+      "options": "-o 4 -d -t 1",
+      "why": "Hardy 模拟模式（-o 4）",
+      "rc": 0,
+      "cmd": "docker run --rm minbms/basmat:4.0-f2f0125 -o 4 -d -t 1 \"(0,0)(1,1)[3]\""
+    },
+    {
+      "name": "notation-w",
+      "ini": "(0)(1)[3]",
+      "options": "-d -t 1",
+      "why": "ω 的写法",
+      "rc": 0,
+      "cmd": "docker run --rm minbms/basmat:4.0-f2f0125 -d -t 1 \"(0)(1)[3]\""
+    },
+    {
+      "name": "notation-w-plus-1",
+      "ini": "(0)(1)(0)[3]",
+      "options": "-d -t 1",
+      "why": "后继（+1）怎么叠在极限后面",
+      "rc": 0,
+      "cmd": "docker run --rm minbms/basmat:4.0-f2f0125 -d -t 1 \"(0)(1)(0)[3]\""
+    },
+    {
+      "name": "notation-w-squared",
+      "ini": "(0)(1)(1)[3]",
+      "options": "-d -t 1",
+      "why": "ω^2 的写法",
+      "rc": 0,
+      "cmd": "docker run --rm minbms/basmat:4.0-f2f0125 -d -t 1 \"(0)(1)(1)[3]\""
+    },
+    {
+      "name": "notation-w-times-2",
+      "ini": "(0)(1)(0)(1)[3]",
+      "options": "-d -t 1",
+      "why": "ω·2 的写法（乘号？还是连加？）",
+      "rc": 0,
+      "cmd": "docker run --rm minbms/basmat:4.0-f2f0125 -d -t 1 \"(0)(1)(0)(1)[3]\""
+    },
+    {
+      "name": "notation-w-pow-w-plus-1",
+      "ini": "(0)(1)(2)(1)[3]",
+      "options": "-d -t 1",
+      "why": "ω^(ω+1) 的写法",
+      "rc": 0,
+      "cmd": "docker run --rm minbms/basmat:4.0-f2f0125 -d -t 1 \"(0)(1)(2)(1)[3]\""
+    },
+    {
+      "name": "notation-multi-term",
+      "ini": "(0)(1)(1)(1)(0)(1)(1)(1)[3]",
+      "options": "-d -t 1",
+      "why": "多系数项 ω^3·2 的写法",
+      "rc": 0,
+      "cmd": "docker run --rm minbms/basmat:4.0-f2f0125 -d -t 1 \"(0)(1)(1)(1)(0)(1)(1)(1)[3]\""
+    },
+    {
+      "name": "notation-e0-plus-w",
+      "ini": "(0,0)(1,1)(1,0)[3]",
+      "options": "-d -t 1",
+      "why": "ε₀+ω：跨到 e 记法时怎么写",
+      "rc": 0,
+      "cmd": "docker run --rm minbms/basmat:4.0-f2f0125 -d -t 1 \"(0,0)(1,1)(1,0)[3]\""
+    },
+    {
+      "name": "not-standard-1row",
+      "ini": "(0)(0)(1)[3]",
+      "options": "-d -t 1",
+      "why": "basmat 判它**不标准**，于是不给 Ord（本仓库认为是标准矩阵 =ω）",
+      "rc": 0,
+      "cmd": "docker run --rm minbms/basmat:4.0-f2f0125 -d -t 1 \"(0)(0)(1)[3]\""
+    },
+    {
+      "name": "not-standard-2row",
+      "ini": "(0,0)(0,0)(1,1)[3]",
+      "options": "-d -t 1",
+      "why": "同上，2 行版",
+      "rc": 0,
+      "cmd": "docker run --rm minbms/basmat:4.0-f2f0125 -d -t 1 \"(0,0)(0,0)(1,1)[3]\""
+    },
+    {
+      "name": "calc-number-is-n",
+      "ini": "(0)[5]",
+      "options": "-d -t 1",
+      "why": "纯零列矩阵：`Calculated number` 就是 n（不是序数！）",
+      "rc": 0,
+      "cmd": "docker run --rm minbms/basmat:4.0-f2f0125 -d -t 1 \"(0)[5]\""
+    }
+  ]
+}
